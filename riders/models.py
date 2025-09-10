@@ -126,6 +126,7 @@ class Rider(models.Model):
     phone_number = models.CharField(max_length=15, unique=True)
     first_name = models.CharField(max_length=50, default='')
     last_name = models.CharField(max_length=50, default='')
+    fcm_token = models.TextField(blank=True, null=True)  # For push notifications
     
     # Enumerator Assignment
     assigned_enumerator = models.ForeignKey(

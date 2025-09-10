@@ -23,4 +23,10 @@ urlpatterns = [
     path('enumerator/rider/<int:rider_id>/approve/', views.enumerator_approve_rider, name='enumerator_approve_rider'),
     path('enumerator/rider/<int:rider_id>/reject/', views.enumerator_reject_rider, name='enumerator_reject_rider'),
     path('enumerator/dashboard/stats/', views.enumerator_dashboard_stats, name='enumerator_dashboard_stats'),
+    path('enumerator/change-password/', views.enumerator_change_password, name='enumerator_change_password'),
+    
+    # FCM/Push Notification endpoints
+    path('fcm/update-token/', views.update_fcm_token, name='update_fcm_token'),
+    path('riders/<int:rider_id>/approve/', views.approve_rider, name='approve_rider'),
+    path('riders/<int:rider_id>/reject/', views.reject_rider, name='reject_rider'),
 ]

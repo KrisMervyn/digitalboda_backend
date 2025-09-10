@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from .models import Rider, Lesson, RiderProgress, RiderApplication, Enumerator
+from .services.notification_service import FCMService
 
 def verify_firebase_token(request):
     """Helper function to verify Firebase ID token"""
@@ -565,10 +566,21 @@ def verify_enumerator_auth(request):
     try:
         import base64
         credentials = base64.b64decode(auth_header.split(' ')[1]).decode('utf-8')
-        username, password = credentials.split(':')
+        identifier, password = credentials.split(':')
         
-        # Authenticate user
-        user = authenticate(username=username, password=password)
+        # Check if identifier is an Enumerator ID (starts with EN-)
+        user = None
+        if identifier.startswith('EN-'):
+            # Identifier is an Enumerator ID
+            try:
+                enumerator = Enumerator.objects.get(unique_id=identifier, status=Enumerator.ACTIVE)
+                user = authenticate(username=enumerator.user.username, password=password)
+            except Enumerator.DoesNotExist:
+                return None
+        else:
+            # Identifier is a username
+            user = authenticate(username=identifier, password=password)
+        
         if user:
             try:
                 enumerator = user.enumerator_profile
@@ -590,21 +602,41 @@ def enumerator_login(request):
     print(f"   Headers: {dict(request.headers)}")
     print(f"   Raw data: {request.body}")
     
+    # Accept either 'username' or 'enumeratorId' for backward compatibility
     username = request.data.get('username')
+    enumerator_id = request.data.get('enumeratorId')
     password = request.data.get('password')
     
+    # Determine login identifier
+    login_identifier = enumerator_id if enumerator_id else username
+    
     print(f"🔐 Enumerator login attempt:")
+    print(f"   Enumerator ID: {enumerator_id}")
     print(f"   Username: {username}")
+    print(f"   Login identifier: {login_identifier}")
     print(f"   Password length: {len(password) if password else 0}")
     
-    if not username or not password:
-        print(f"   ❌ Missing username or password")
+    if not login_identifier or not password:
+        print(f"   ❌ Missing login identifier or password")
         return Response(
-            {'error': 'Username and password are required'}, 
+            {'error': 'Enumerator ID and password are required'}, 
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    user = authenticate(username=username, password=password)
+    # If enumerator ID is provided, find the corresponding username
+    user = None
+    if enumerator_id:
+        try:
+            # Find enumerator by unique_id and get the username
+            enumerator = Enumerator.objects.get(unique_id=enumerator_id, status=Enumerator.ACTIVE)
+            user = authenticate(username=enumerator.user.username, password=password)
+            print(f"   Found enumerator: {enumerator.full_name}, username: {enumerator.user.username}")
+        except Enumerator.DoesNotExist:
+            print(f"   ❌ Enumerator with ID {enumerator_id} not found or inactive")
+            user = None
+    else:
+        # Fallback to username authentication
+        user = authenticate(username=username, password=password)
     print(f"   Authentication result: {user is not None}")
     if user:
         print(f"   ✅ User found: {user.username}")
@@ -901,3 +933,203 @@ def enumerator_dashboard_stats(request):
             'assignedRegion': enumerator.assigned_region
         }
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['PUT'])
+def update_fcm_token(request):
+    """Update rider's FCM token for push notifications."""
+    print("🔔 FCM Token update request received")
+    
+    # Verify Firebase token
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        print("❌ Invalid Firebase token")
+        return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        data = request.data
+        fcm_token = data.get('fcm_token')
+        phone_number = data.get('phone_number')  # May be provided explicitly
+        
+        if not fcm_token:
+            return Response({'error': 'FCM token is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # For now, since our Firebase verification is basic, we'll require phone_number
+        if not phone_number:
+            return Response({'error': 'Phone number is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Find the rider
+        try:
+            rider = Rider.objects.get(phone_number=phone_number)
+        except Rider.DoesNotExist:
+            return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update FCM token
+        if FCMService.update_rider_fcm_token(rider, fcm_token):
+            print(f"✅ FCM token updated for rider {rider.phone_number}")
+            return Response({'message': 'FCM token updated successfully'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to update FCM token'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        print(f"❌ Error updating FCM token: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def approve_rider(request, rider_id):
+    """Approve a rider and send push notification."""
+    print(f"🔔 Rider approval request for rider {rider_id}")
+    
+    # Verify Firebase token
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        rider = Rider.objects.get(id=rider_id)
+        
+        # Update rider status
+        rider.status = Rider.APPROVED
+        rider.approved_at = timezone.now()
+        rider.save()
+        
+        print(f"✅ Rider {rider.phone_number} approved")
+        
+        # Send push notification if FCM token exists
+        if rider.fcm_token:
+            success = FCMService.send_status_change_notification(
+                fcm_token=rider.fcm_token,
+                rider_name=rider.full_name,
+                new_status='APPROVED'
+            )
+            
+            if success:
+                print(f"🔔 Approval notification sent to {rider.full_name}")
+            else:
+                print(f"❌ Failed to send notification to {rider.full_name}")
+        else:
+            print(f"⚠️ No FCM token for rider {rider.full_name}")
+        
+        return Response({
+            'message': 'Rider approved successfully',
+            'notification_sent': bool(rider.fcm_token)
+        }, status=status.HTTP_200_OK)
+        
+    except Rider.DoesNotExist:
+        return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        print(f"❌ Error approving rider: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def reject_rider(request, rider_id):
+    """Reject a rider and send push notification."""
+    print(f"🔔 Rider rejection request for rider {rider_id}")
+    
+    # Verify Firebase token
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        rider = Rider.objects.get(id=rider_id)
+        data = request.data
+        
+        rejection_reason = data.get('rejection_reason', 'No reason provided')
+        
+        # Update rider status
+        rider.status = Rider.REJECTED
+        rider.rejection_reason = rejection_reason
+        rider.save()
+        
+        print(f"✅ Rider {rider.phone_number} rejected: {rejection_reason}")
+        
+        # Send push notification if FCM token exists
+        if rider.fcm_token:
+            success = FCMService.send_status_change_notification(
+                fcm_token=rider.fcm_token,
+                rider_name=rider.full_name,
+                new_status='REJECTED',
+                rejection_reason=rejection_reason
+            )
+            
+            if success:
+                print(f"🔔 Rejection notification sent to {rider.full_name}")
+            else:
+                print(f"❌ Failed to send notification to {rider.full_name}")
+        else:
+            print(f"⚠️ No FCM token for rider {rider.full_name}")
+        
+        return Response({
+            'message': 'Rider rejected successfully',
+            'notification_sent': bool(rider.fcm_token)
+        }, status=status.HTTP_200_OK)
+        
+    except Rider.DoesNotExist:
+        return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        print(f"❌ Error rejecting rider: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def enumerator_change_password(request):
+    """Allow enumerators to change their password"""
+    # Verify enumerator authentication
+    enumerator = verify_enumerator_auth(request)
+    if not enumerator:
+        return Response(
+            {'error': 'Enumerator authentication required'}, 
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    
+    current_password = request.data.get('currentPassword')
+    new_password = request.data.get('newPassword')
+    confirm_password = request.data.get('confirmPassword')
+    
+    # Validate required fields
+    if not current_password or not new_password or not confirm_password:
+        return Response(
+            {'error': 'All password fields are required'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate new passwords match
+    if new_password != confirm_password:
+        return Response(
+            {'error': 'New passwords do not match'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate password length
+    if len(new_password) < 6:
+        return Response(
+            {'error': 'New password must be at least 6 characters long'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Verify current password
+    user = enumerator.user
+    if not user.check_password(current_password):
+        return Response(
+            {'error': 'Current password is incorrect'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Change password
+    try:
+        user.set_password(new_password)
+        user.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Password changed successfully'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {'error': 'Failed to change password'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
