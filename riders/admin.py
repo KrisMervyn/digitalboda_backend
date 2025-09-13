@@ -40,8 +40,8 @@ class RiderProgressAdmin(admin.ModelAdmin):
 
 @admin.register(Enumerator)
 class EnumeratorAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'unique_id', 'phone_number', 'status', 'location', 'created_at']
-    list_filter = ['status', 'assigned_region', 'created_at']
+    list_display = ['full_name', 'unique_id', 'phone_number', 'gender', 'status', 'location', 'created_at']
+    list_filter = ['status', 'gender', 'assigned_region', 'created_at']
     search_fields = ['first_name', 'last_name', 'phone_number', 'unique_id']
     readonly_fields = ['unique_id', 'created_at', 'updated_at', 'approved_at', 'approved_by']
 

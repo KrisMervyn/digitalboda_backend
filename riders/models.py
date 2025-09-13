@@ -1,6 +1,9 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 import uuid
+import hashlib
+from .encryption import EncryptedIDField, IDEncryption, log_id_access
 
 
 class Enumerator(models.Model):
@@ -23,6 +26,19 @@ class Enumerator(models.Model):
     first_name = models.CharField(max_length=50)
     last_name = models.CharField(max_length=50)
     phone_number = models.CharField(max_length=15, unique=True)
+    
+    # Gender
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+        ('O', 'Other'),
+    ]
+    gender = models.CharField(
+        max_length=1,
+        choices=GENDER_CHOICES,
+        blank=True,
+        null=True
+    )
     
     # Status
     status = models.CharField(
@@ -160,7 +176,41 @@ class Rider(models.Model):
     
     # Documents
     national_id_photo = models.ImageField(upload_to='documents/', blank=True, null=True)
-    national_id_number = models.CharField(max_length=20, blank=True)
+    national_id_number = models.CharField(max_length=20, blank=True)  # DEPRECATED: Will be removed
+    
+    # SECURITY: Encrypted ID storage
+    # national_id_encrypted = EncryptedIDField(blank=True, null=True, help_text="Encrypted ID number")
+    national_id_hash = models.CharField(max_length=64, blank=True, null=True, db_index=True, 
+                                       help_text="Hash for duplicate detection")
+    
+    # ID verification status
+    id_verification_status = models.CharField(max_length=20, choices=[
+        ('PENDING', 'Pending Verification'),
+        ('VERIFIED', 'Verified'),
+        ('REJECTED', 'Rejected'),
+        ('FLAGGED', 'Flagged for Review'),
+    ], default='PENDING')
+    
+    id_verified_at = models.DateTimeField(blank=True, null=True)
+    id_verified_by = models.ForeignKey('Enumerator', on_delete=models.SET_NULL, 
+                                      null=True, blank=True, related_name='verified_ids')
+    
+    # Access tracking
+    id_last_accessed = models.DateTimeField(blank=True, null=True)
+    id_access_count = models.IntegerField(default=0)
+    
+    # SECURITY: Photo verification status
+    photo_verification_status = models.CharField(max_length=20, choices=[
+        ('PENDING', 'Pending Verification'),
+        ('VERIFIED', 'Photos Verified'),
+        ('REJECTED', 'Photos Rejected'),
+        ('FLAGGED', 'Flagged for Review'),
+    ], default='PENDING')
+    
+    face_match_score = models.FloatField(null=True, blank=True, help_text="Face matching confidence score")
+    photo_verified_at = models.DateTimeField(null=True, blank=True)
+    photo_verified_by = models.ForeignKey('Enumerator', on_delete=models.SET_NULL, 
+                                         null=True, blank=True, related_name='verified_photos')
     
     # Enumerator & Approval
     approved_by = models.ForeignKey(
@@ -212,6 +262,166 @@ class Rider(models.Model):
             
         self.unique_id = unique_id
         self.save()
+    
+    def set_national_id(self, id_number, accessed_by=None, reason=None, request=None):
+        """
+        Securely set national ID with encryption and audit logging
+        
+        Args:
+            id_number (str): Plain text ID number
+            accessed_by (User): User setting the ID
+            reason (str): Reason for setting ID
+            request: HTTP request object for IP/user agent
+        """
+        if not id_number:
+            return False
+            
+        # Validate ID format
+        encryptor = IDEncryption()
+        if not encryptor.validate_id_format(id_number):
+            log_id_access(self, accessed_by, 'SET_ID', f"{reason} - INVALID FORMAT", 
+                         success=False, 
+                         ip_address=getattr(request, 'META', {}).get('REMOTE_ADDR'),
+                         user_agent=getattr(request, 'META', {}).get('HTTP_USER_AGENT'))
+            raise ValueError("Invalid Uganda National ID format")
+        
+        # Check for duplicates using hash
+        id_hash = encryptor.hash_id_for_verification(id_number)
+        if Rider.objects.filter(national_id_hash=id_hash).exclude(pk=self.pk).exists():
+            log_id_access(self, accessed_by, 'SET_ID', f"{reason} - DUPLICATE", 
+                         success=False,
+                         ip_address=getattr(request, 'META', {}).get('REMOTE_ADDR'),
+                         user_agent=getattr(request, 'META', {}).get('HTTP_USER_AGENT'))
+            raise ValueError("This ID number is already registered")
+        
+        # Set encrypted ID and hash
+        self.national_id_encrypted = id_number  # Will be encrypted by EncryptedIDField
+        self.national_id_hash = id_hash
+        self.id_verification_status = 'PENDING'
+        self.save(update_fields=['national_id_encrypted', 'national_id_hash', 'id_verification_status'])
+        
+        # Log successful access
+        log_id_access(self, accessed_by, 'SET_ID', reason,
+                     ip_address=getattr(request, 'META', {}).get('REMOTE_ADDR'),
+                     user_agent=getattr(request, 'META', {}).get('HTTP_USER_AGENT'))
+        
+        return True
+    
+    def get_national_id(self, accessed_by=None, reason=None, request=None):
+        """
+        Securely get national ID with authorization and audit logging
+        
+        Args:
+            accessed_by (User): User requesting the ID
+            reason (str): Reason for accessing ID
+            request: HTTP request object for IP/user agent
+            
+        Returns:
+            str: Plain text ID number or None
+        """
+        if not self.national_id_encrypted:
+            return None
+            
+        # Check authorization
+        if not self._authorize_id_access(accessed_by, reason):
+            log_id_access(self, accessed_by, 'UNAUTHORIZED_ACCESS', reason, 
+                         success=False,
+                         ip_address=getattr(request, 'META', {}).get('REMOTE_ADDR'),
+                         user_agent=getattr(request, 'META', {}).get('HTTP_USER_AGENT'))
+            raise PermissionError("Unauthorized access to ID data")
+        
+        # Update access tracking
+        self.id_last_accessed = timezone.now()
+        self.id_access_count += 1
+        self.save(update_fields=['id_last_accessed', 'id_access_count'])
+        
+        # Log access
+        log_id_access(self, accessed_by, 'VIEW_ID', reason,
+                     ip_address=getattr(request, 'META', {}).get('REMOTE_ADDR'),
+                     user_agent=getattr(request, 'META', {}).get('HTTP_USER_AGENT'))
+        
+        # Return decrypted ID (EncryptedIDField handles decryption)
+        return self.national_id_encrypted
+    
+    def get_masked_id(self):
+        """
+        Get masked version of ID for display purposes (CF12****7890)
+        No authorization required for masked display
+        """
+        if not self.national_id_encrypted:
+            return None
+            
+        try:
+            full_id = self.national_id_encrypted  # Gets decrypted version
+            if len(full_id) >= 8:
+                # For 15-char IDs like CF1234567890123, show CF12******0123
+                stars_count = len(full_id) - 8  # 15 - 8 = 7 stars
+                return full_id[:4] + '*' * stars_count + full_id[-4:]
+            else:
+                return '***masked***'
+        except:
+            return '***masked***'
+    
+    def _authorize_id_access(self, accessed_by, reason):
+        """
+        Check if user is authorized to access ID data
+        
+        Args:
+            accessed_by (User): User requesting access
+            reason (str): Reason for access
+            
+        Returns:
+            bool: True if authorized
+        """
+        if not accessed_by:
+            return False
+            
+        # Admin users can always access
+        if accessed_by.is_staff or accessed_by.is_superuser:
+            return True
+            
+        # Enumerators can access IDs of their assigned riders
+        try:
+            enumerator = accessed_by.enumerator_profile
+            if self.assigned_enumerator == enumerator:
+                return True
+        except:
+            pass
+            
+        # User accessing their own ID
+        rider_username = f"rider_{self.phone_number}"
+        if accessed_by.username == rider_username:
+            return True
+            
+        return False
+    
+    def check_duplicate_id(self, id_number):
+        """
+        Check for duplicate ID without exposing other IDs
+        
+        Args:
+            id_number (str): Plain text ID to check
+            
+        Returns:
+            bool: True if duplicate exists
+        """
+        if not id_number:
+            return False
+            
+        encryptor = IDEncryption()
+        id_hash = encryptor.hash_id_for_verification(id_number)
+        
+        return Rider.objects.filter(
+            national_id_hash=id_hash
+        ).exclude(pk=self.pk).exists()
+
+# Import photo verification models and methods
+try:
+    from .photo_models import PhotoVerificationResult, add_photo_verification_methods
+    # The methods will be added to Rider class automatically
+except ImportError as e:
+    import logging
+    logging.getLogger('riders').warning(f"Photo verification not available: {e}")
 
 class Lesson(models.Model):
     title = models.CharField(max_length=200)
