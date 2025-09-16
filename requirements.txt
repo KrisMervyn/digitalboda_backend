@@ -27,6 +27,9 @@ pytesseract>=0.3.10
 gunicorn>=21.0.0
 whitenoise>=6.0.0
 
+# Digital Ocean deployment essentials
+dj-database-url>=2.0.0
+
 # Background Tasks
 celery>=5.3.0
 redis>=5.0.0

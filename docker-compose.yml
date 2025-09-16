@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    command: gunicorn --config gunicorn.conf.py digitalboda_backend.wsgi:application
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME:-digitalboda_prod}
+      POSTGRES_USER: ${DB_USER:-digitalboda_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery:
+    build: .
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend worker --loglevel=info
+
+  celery-beat:
+    build: .
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend beat --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
