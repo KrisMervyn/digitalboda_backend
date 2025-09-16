@@ -6,7 +6,9 @@ from django.utils import timezone
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
-from .models import Rider, Lesson, RiderProgress, RiderApplication, Enumerator
+from .models import (Rider, Lesson, RiderProgress, RiderApplication, Enumerator, 
+                     DigitalLiteracyModule, SessionSchedule, SessionAttendance, 
+                     DigitalLiteracyProgress, Stage, StageRiderAssignment)
 from .services.notification_service import FCMService
 
 def verify_firebase_token(request):
@@ -259,13 +261,38 @@ def submit_onboarding(request):
                     
                     if extracted_id:
                         extracted_id = extracted_id.strip().upper()
-                        # Check if entered ID matches extracted ID
-                        if entered_id not in extracted_id and extracted_id not in entered_id:
+                        
+                        # Use more flexible ID matching that accounts for OCR errors
+                        def calculate_similarity(str1, str2):
+                            """Calculate similarity percentage between two strings"""
+                            if not str1 or not str2:
+                                return 0
+                            # Calculate character match percentage
+                            matches = sum(1 for a, b in zip(str1, str2) if a == b)
+                            max_len = max(len(str1), len(str2))
+                            return (matches / max_len * 100) if max_len > 0 else 0
+                        
+                        # Check multiple validation methods
+                        exact_match = entered_id == extracted_id
+                        substring_match = entered_id in extracted_id or extracted_id in entered_id
+                        similarity_score = calculate_similarity(entered_id, extracted_id)
+                        
+                        # More lenient validation: pass if any condition is met
+                        validation_passed = (
+                            exact_match or 
+                            substring_match or 
+                            similarity_score >= 60 or  # Allow 60% similarity for OCR errors
+                            len(entered_id) >= 10  # Trust user input for valid-looking IDs
+                        )
+                        
+                        if not validation_passed:
+                            # Only fail if the IDs are completely different and low similarity
                             id_validation_passed = False
-                            id_validation_message = f"ID number mismatch: Entered '{entered_id}' but photo shows '{extracted_id}'"
+                            id_validation_message = f"ID number mismatch: Entered '{entered_id}' but photo shows '{extracted_id}' (Similarity: {similarity_score:.1f}%)"
                             print(f"❌ ID validation failed: {id_validation_message}")
                         else:
-                            print(f"✅ ID validation passed: '{entered_id}' matches photo")
+                            validation_method = "exact match" if exact_match else "substring match" if substring_match else f"similarity match ({similarity_score:.1f}%)"
+                            print(f"✅ ID validation passed: '{entered_id}' matches photo via {validation_method}")
                     else:
                         print(f"⚠️ Could not extract ID from photo, allowing submission")
                 else:
@@ -1808,3 +1835,1324 @@ def admin_pending_riders_by_enumerator(request):
             {'error': 'Failed to get pending riders by enumerator'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+# =============================================================================
+# DIGITAL LITERACY TRAINING API ENDPOINTS
+# =============================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def digital_literacy_modules(request):
+    """Get all digital literacy training modules"""
+    try:
+        from .models import DigitalLiteracyModule
+        
+        modules = DigitalLiteracyModule.objects.filter(is_active=True).prefetch_related('sessions')
+        
+        modules_data = []
+        for module in modules:
+            modules_data.append({
+                'id': module.id,
+                'title': module.title,
+                'description': module.description,
+                'session_count': module.session_count,
+                'total_duration_hours': float(module.total_duration_hours),
+                'points_value': module.points_value,
+                'icon': module.icon,
+                'order': module.order,
+                'sessions': [
+                    {
+                        'id': session.id,
+                        'session_number': session.session_number,
+                        'title': session.title,
+                        'description': session.description,
+                        'duration_hours': float(session.duration_hours),
+                        'learning_objectives': session.learning_objectives,
+                        'required_materials': session.required_materials,
+                        'points_value': session.points_value,
+                    } for session in module.sessions.all()
+                ]
+            })
+        
+        return Response({
+            'success': True,
+            'data': modules_data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting digital literacy modules: {e}")
+        return Response(
+            {'error': 'Failed to get digital literacy modules'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def upcoming_training_sessions(request):
+    """Get upcoming training sessions for riders"""
+    try:
+        from .models import SessionSchedule, DigitalLiteracyProgress
+        from django.utils import timezone
+        
+        # Get rider from phone number (assuming rider authentication)
+        phone_number = request.GET.get('phone_number')
+        if not phone_number:
+            return Response({'error': 'Phone number required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            rider = Rider.objects.get(phone_number=phone_number)
+        except Rider.DoesNotExist:
+            return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get upcoming sessions (next 30 days)
+        upcoming_schedules = SessionSchedule.objects.filter(
+            scheduled_date__gte=timezone.now(),
+            scheduled_date__lte=timezone.now() + timedelta(days=30),
+            status='SCHEDULED'
+        ).select_related('session__module', 'trainer').order_by('scheduled_date')
+        
+        sessions_data = []
+        for schedule in upcoming_schedules:
+            # Check if rider is already registered
+            is_registered = schedule.attendance_records.filter(
+                rider=rider,
+                status__in=['REGISTERED', 'ATTENDED']
+            ).exists()
+            
+            # Check rider's progress in this module
+            progress = DigitalLiteracyProgress.objects.filter(
+                rider=rider,
+                module=schedule.session.module
+            ).first()
+            
+            sessions_data.append({
+                'schedule_id': schedule.id,
+                'session': {
+                    'id': schedule.session.id,
+                    'title': schedule.session.title,
+                    'description': schedule.session.description,
+                    'session_number': schedule.session.session_number,
+                    'duration_hours': float(schedule.session.duration_hours),
+                    'points_value': schedule.session.points_value,
+                },
+                'module': {
+                    'id': schedule.session.module.id,
+                    'title': schedule.session.module.title,
+                    'icon': schedule.session.module.icon,
+                },
+                'trainer': {
+                    'id': schedule.trainer.id,
+                    'name': schedule.trainer.full_name,
+                    'unique_id': schedule.trainer.unique_id,
+                },
+                'scheduled_date': schedule.scheduled_date.isoformat(),
+                'location_name': schedule.location_name,
+                'location_address': schedule.location_address,
+                'gps_coordinates': {
+                    'latitude': float(schedule.gps_latitude) if schedule.gps_latitude else None,
+                    'longitude': float(schedule.gps_longitude) if schedule.gps_longitude else None,
+                },
+                'capacity': schedule.capacity,
+                'registered_count': schedule.registered_count,
+                'spots_remaining': schedule.spots_remaining,
+                'is_registered': is_registered,
+                'rider_progress': {
+                    'completion_percentage': float(progress.completion_percentage) if progress else 0,
+                    'sessions_attended': progress.sessions_attended if progress else 0,
+                    'skill_level': progress.skill_level if progress else 'BEGINNER',
+                } if progress else None,
+            })
+        
+        return Response({
+            'success': True,
+            'data': {
+                'upcoming_sessions': sessions_data,
+                'total_count': len(sessions_data)
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting upcoming training sessions: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': 'Failed to get upcoming training sessions'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_attendance(request):
+    """Register attendance for a training session with GPS verification"""
+    try:
+        from .models import SessionSchedule, SessionAttendance, AttendanceVerification
+        from django.utils import timezone
+        
+        data = request.data
+        phone_number = data.get('phone_number')
+        schedule_id = data.get('schedule_id')
+        trainer_id_entered = data.get('trainer_id')
+        gps_latitude = data.get('gps_latitude')
+        gps_longitude = data.get('gps_longitude')
+        
+        # Validate required fields
+        if not all([phone_number, schedule_id, trainer_id_entered, gps_latitude, gps_longitude]):
+            return Response({
+                'error': 'Missing required fields: phone_number, schedule_id, trainer_id, gps_latitude, gps_longitude'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get rider
+        try:
+            rider = Rider.objects.get(phone_number=phone_number)
+        except Rider.DoesNotExist:
+            return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get session schedule
+        try:
+            schedule = SessionSchedule.objects.select_related('trainer', 'session__module').get(id=schedule_id)
+        except SessionSchedule.DoesNotExist:
+            return Response({'error': 'Training session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if session is still open for registration
+        if schedule.status != 'SCHEDULED':
+            return Response({'error': 'This session is no longer available for registration'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if there's capacity
+        if schedule.spots_remaining <= 0:
+            return Response({'error': 'This session is full'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if rider is already registered
+        existing_attendance = SessionAttendance.objects.filter(
+            schedule=schedule,
+            rider=rider,
+            status__in=['REGISTERED', 'ATTENDED']
+        ).first()
+        
+        if existing_attendance:
+            return Response({
+                'error': 'You are already registered for this session',
+                'attendance_id': existing_attendance.id
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify trainer ID matches
+        if trainer_id_entered.strip().upper() != schedule.trainer.unique_id.upper():
+            return Response({'error': 'Invalid trainer ID. Please check and try again.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate distance from venue
+        def calculate_distance(lat1, lon1, lat2, lon2):
+            if not all([lat1, lon1, lat2, lon2]):
+                return None
+            
+            from math import radians, cos, sin, asin, sqrt
+            
+            # Convert to radians
+            lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+            
+            # Haversine formula
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * asin(sqrt(a))
+            r = 6371  # Radius of earth in kilometers
+            
+            return c * r * 1000  # Return distance in meters
+        
+        distance_from_venue = calculate_distance(
+            float(gps_latitude),
+            float(gps_longitude),
+            float(schedule.gps_latitude) if schedule.gps_latitude else 0,
+            float(schedule.gps_longitude) if schedule.gps_longitude else 0
+        )
+        
+        # Check if rider is within reasonable distance (500 meters)
+        max_distance = 500  # meters
+        if distance_from_venue and distance_from_venue > max_distance:
+            return Response({
+                'error': f'You must be within {max_distance}m of the training venue to register. Current distance: {int(distance_from_venue)}m'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create attendance record
+        attendance = SessionAttendance.objects.create(
+            schedule=schedule,
+            rider=rider,
+            check_in_time=timezone.now(),
+            check_in_gps_latitude=gps_latitude,
+            check_in_gps_longitude=gps_longitude,
+            status='REGISTERED'
+        )
+        
+        # Create verification record
+        verification = AttendanceVerification.objects.create(
+            attendance=attendance,
+            rider_verified=True,
+            rider_verification_time=timezone.now(),
+            trainer_id_entered=trainer_id_entered,
+            distance_from_venue_meters=distance_from_venue
+        )
+        
+        # Check if early registration bonus applies (within first 15 minutes)
+        session_start = schedule.scheduled_date
+        early_registration_cutoff = session_start + timedelta(minutes=15)
+        is_early_registration = timezone.now() <= early_registration_cutoff
+        
+        # Award points for attendance
+        base_points = schedule.session.points_value
+        bonus_points = 50 if is_early_registration else 0
+        total_points = base_points + bonus_points
+        
+        from .models import DigitalSkillsPoints
+        points_record = DigitalSkillsPoints.objects.create(
+            rider=rider,
+            attendance=attendance,
+            points=total_points,
+            source='EARLY_REGISTRATION' if is_early_registration else 'ATTENDANCE',
+            description=f"Registered for {schedule.session.title}" + (" (Early Registration Bonus)" if is_early_registration else "")
+        )
+        
+        # Update or create progress record
+        from .models import DigitalLiteracyProgress
+        progress, created = DigitalLiteracyProgress.objects.get_or_create(
+            rider=rider,
+            module=schedule.session.module,
+            defaults={'sessions_attended': 1, 'last_session_attended': timezone.now()}
+        )
+        
+        if not created:
+            progress.sessions_attended += 1
+            progress.last_session_attended = timezone.now()
+            progress.update_progress()
+        else:
+            progress.update_progress()
+        
+        return Response({
+            'success': True,
+            'message': 'Successfully registered for training session!',
+            'data': {
+                'attendance_id': attendance.id,
+                'session_title': schedule.session.title,
+                'scheduled_date': schedule.scheduled_date.isoformat(),
+                'location': schedule.location_name,
+                'points_earned': total_points,
+                'early_registration_bonus': bonus_points > 0,
+                'distance_from_venue_meters': int(distance_from_venue) if distance_from_venue else None,
+                'verification_pending': not verification.trainer_verified,
+                'progress': {
+                    'sessions_attended': progress.sessions_attended,
+                    'completion_percentage': float(progress.completion_percentage)
+                }
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print(f"💥 Error registering attendance: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': 'Failed to register attendance'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def rider_digital_literacy_progress(request):
+    """Get rider's digital literacy progress across all modules"""
+    try:
+        phone_number = request.GET.get('phone_number')
+        if not phone_number:
+            return Response({'error': 'Phone number required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            rider = Rider.objects.get(phone_number=phone_number)
+        except Rider.DoesNotExist:
+            return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        from .models import DigitalLiteracyModule, DigitalLiteracyProgress, DigitalSkillsPoints
+        
+        # Get all modules
+        modules = DigitalLiteracyModule.objects.filter(is_active=True).order_by('order')
+        
+        # Get rider's progress
+        progress_records = DigitalLiteracyProgress.objects.filter(rider=rider)
+        progress_dict = {p.module_id: p for p in progress_records}
+        
+        # Get total points earned
+        total_points = DigitalSkillsPoints.objects.filter(rider=rider).aggregate(
+            total=models.Sum('points')
+        )['total'] or 0
+        
+        modules_data = []
+        overall_completion = 0
+        total_sessions_attended = 0
+        total_sessions_available = 0
+        
+        for module in modules:
+            progress = progress_dict.get(module.id)
+            
+            module_data = {
+                'id': module.id,
+                'title': module.title,
+                'description': module.description,
+                'icon': module.icon,
+                'session_count': module.session_count,
+                'total_duration_hours': float(module.total_duration_hours),
+                'points_value': module.points_value,
+                'progress': {
+                    'sessions_attended': progress.sessions_attended if progress else 0,
+                    'completion_percentage': float(progress.completion_percentage) if progress else 0,
+                    'skill_level': progress.skill_level if progress else 'BEGINNER',
+                    'started_at': progress.started_at.isoformat() if progress else None,
+                    'completed_at': progress.completed_at.isoformat() if progress and progress.completed_at else None,
+                    'last_session_attended': progress.last_session_attended.isoformat() if progress and progress.last_session_attended else None,
+                }
+            }
+            
+            modules_data.append(module_data)
+            
+            # Calculate overall progress
+            if progress:
+                overall_completion += progress.completion_percentage
+                total_sessions_attended += progress.sessions_attended
+            total_sessions_available += module.session_count
+        
+        overall_completion_percentage = overall_completion / len(modules) if modules else 0
+        
+        return Response({
+            'success': True,
+            'data': {
+                'rider': {
+                    'id': rider.id,
+                    'full_name': rider.full_name,
+                    'phone_number': rider.phone_number,
+                    'unique_id': rider.unique_id,
+                },
+                'overall_progress': {
+                    'completion_percentage': round(overall_completion_percentage, 2),
+                    'total_sessions_attended': total_sessions_attended,
+                    'total_sessions_available': total_sessions_available,
+                    'total_points_earned': total_points,
+                    'modules_started': len([p for p in progress_records if p.sessions_attended > 0]),
+                    'modules_completed': len([p for p in progress_records if p.completed_at]),
+                },
+                'modules': modules_data
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting rider digital literacy progress: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': 'Failed to get digital literacy progress'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def digital_literacy_leaderboard(request):
+    """Get digital literacy leaderboard"""
+    try:
+        print('🏆 Fetching digital literacy leaderboard...')
+        
+        period = request.GET.get('period', 'all_time')
+        limit = int(request.GET.get('limit', 50))
+        
+        # Get riders with digital literacy progress, ordered by points
+        from django.db.models import Sum, Count, Q
+        
+        # Calculate total points for each rider
+        leaderboard_data = []
+        riders_with_progress = Rider.objects.filter(
+            digitalliteracyprogress__isnull=False,
+            approval_status='approved'
+        ).distinct()
+        
+        for rider in riders_with_progress:
+            progress_records = DigitalLiteracyProgress.objects.filter(rider=rider)
+            total_points = sum(p.points_earned for p in progress_records)
+            total_sessions = sum(p.sessions_attended for p in progress_records)
+            
+            if total_points > 0:  # Only include riders with points
+                leaderboard_data.append({
+                    'rider_id': rider.id,
+                    'name': rider.full_name,
+                    'unique_id': rider.unique_id,
+                    'phone_number': rider.phone_number,
+                    'total_points': total_points,
+                    'sessions_attended': total_sessions,
+                    'badge_level': get_badge_level(total_points),
+                })
+        
+        # Sort by points descending
+        leaderboard_data.sort(key=lambda x: x['total_points'], reverse=True)
+        
+        # Add ranking
+        for i, rider in enumerate(leaderboard_data[:limit]):
+            rider['rank'] = i + 1
+            rider['position_icon'] = get_position_icon(i + 1)
+        
+        return Response({
+            'success': True,
+            'data': leaderboard_data[:limit],
+            'total_participants': len(leaderboard_data),
+            'period': period
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting leaderboard: {e}")
+        return Response(
+            {'error': 'Failed to get leaderboard'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])  
+@permission_classes([AllowAny])
+def digital_literacy_achievements(request):
+    """Get rider achievements"""
+    try:
+        phone_number = request.GET.get('phone_number')
+        if not phone_number:
+            return Response(
+                {'error': 'Phone number is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'🏅 Fetching achievements for rider: {phone_number}')
+        
+        rider = Rider.objects.filter(phone_number=phone_number).first()
+        if not rider:
+            return Response(
+                {'error': 'Rider not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get rider's progress
+        progress_records = DigitalLiteracyProgress.objects.filter(rider=rider)
+        total_points = sum(p.points_earned for p in progress_records)
+        total_sessions = sum(p.sessions_attended for p in progress_records)
+        completed_modules = progress_records.filter(completed_at__isnull=False).count()
+        
+        # Define achievements
+        achievements = []
+        
+        # Points-based achievements
+        if total_points >= 100:
+            achievements.append({
+                'id': 1,
+                'title': 'First Steps',
+                'description': 'Earned your first 100 points',
+                'icon': '🌱',
+                'points_required': 100,
+                'earned': True,
+                'earned_date': progress_records.first().updated_at.isoformat() if progress_records.exists() else None,
+                'category': 'Points'
+            })
+            
+        if total_points >= 500:
+            achievements.append({
+                'id': 2,
+                'title': 'Digital Explorer',
+                'description': 'Reached 500 total points',
+                'icon': '🚀',
+                'points_required': 500,
+                'earned': True,
+                'earned_date': progress_records.first().updated_at.isoformat() if progress_records.exists() else None,
+                'category': 'Points'
+            })
+            
+        if total_points >= 1000:
+            achievements.append({
+                'id': 3,
+                'title': 'Digital Master',
+                'description': 'Achieved 1000 total points',
+                'icon': '👑',
+                'points_required': 1000,
+                'earned': True,
+                'earned_date': progress_records.first().updated_at.isoformat() if progress_records.exists() else None,
+                'category': 'Points'
+            })
+        
+        # Session-based achievements
+        if total_sessions >= 5:
+            achievements.append({
+                'id': 4,
+                'title': 'Active Learner',
+                'description': 'Attended 5 training sessions',
+                'icon': '📚',
+                'sessions_required': 5,
+                'earned': True,
+                'earned_date': progress_records.first().updated_at.isoformat() if progress_records.exists() else None,
+                'category': 'Attendance'
+            })
+            
+        if total_sessions >= 15:
+            achievements.append({
+                'id': 5,
+                'title': 'Dedicated Student',
+                'description': 'Attended 15 training sessions',
+                'icon': '🎓',
+                'sessions_required': 15,
+                'earned': True,
+                'earned_date': progress_records.first().updated_at.isoformat() if progress_records.exists() else None,
+                'category': 'Attendance'
+            })
+            
+        # Module completion achievements
+        if completed_modules >= 1:
+            achievements.append({
+                'id': 6,
+                'title': 'Module Completer',
+                'description': 'Completed your first training module',
+                'icon': '✅',
+                'modules_required': 1,
+                'earned': True,
+                'earned_date': progress_records.filter(completed_at__isnull=False).first().completed_at.isoformat() if progress_records.filter(completed_at__isnull=False).exists() else None,
+                'category': 'Completion'
+            })
+            
+        if completed_modules >= 3:
+            achievements.append({
+                'id': 7,
+                'title': 'Triple Threat',
+                'description': 'Completed 3 training modules',
+                'icon': '🏆',
+                'modules_required': 3,
+                'earned': True,
+                'earned_date': progress_records.filter(completed_at__isnull=False).first().completed_at.isoformat() if progress_records.filter(completed_at__isnull=False).exists() else None,
+                'category': 'Completion'
+            })
+        
+        earned_count = len(achievements)
+        total_available = 20  # Total possible achievements
+        
+        return Response({
+            'success': True,
+            'data': achievements,
+            'total_achievements': total_available,
+            'earned_achievements': earned_count,
+            'completion_percentage': round((earned_count / total_available) * 100, 1)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting achievements: {e}")
+        return Response(
+            {'error': 'Failed to get achievements'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny]) 
+def digital_literacy_achievement_stats(request):
+    """Get achievement statistics"""
+    try:
+        print('📊 Fetching achievement statistics...')
+        
+        # Get all riders with progress
+        riders_with_progress = Rider.objects.filter(
+            digitalliteracyprogress__isnull=False,
+            approval_status='approved'
+        ).distinct()
+        
+        total_riders = riders_with_progress.count()
+        
+        if total_riders == 0:
+            return Response({
+                'success': True,
+                'data': {
+                    'total_participants': 0,
+                    'achievements_earned': 0,
+                    'average_achievements_per_rider': 0,
+                    'top_achievers': []
+                }
+            }, status=status.HTTP_200_OK)
+        
+        total_achievements_earned = 0
+        top_achievers = []
+        
+        for rider in riders_with_progress:
+            progress_records = DigitalLiteracyProgress.objects.filter(rider=rider)
+            total_points = sum(p.points_earned for p in progress_records)
+            total_sessions = sum(p.sessions_attended for p in progress_records)
+            completed_modules = progress_records.filter(completed_at__isnull=False).count()
+            
+            # Count achievements for this rider
+            achievements_count = 0
+            if total_points >= 100: achievements_count += 1
+            if total_points >= 500: achievements_count += 1  
+            if total_points >= 1000: achievements_count += 1
+            if total_sessions >= 5: achievements_count += 1
+            if total_sessions >= 15: achievements_count += 1
+            if completed_modules >= 1: achievements_count += 1
+            if completed_modules >= 3: achievements_count += 1
+            
+            total_achievements_earned += achievements_count
+            
+            if achievements_count > 0:
+                top_achievers.append({
+                    'name': rider.full_name,
+                    'unique_id': rider.unique_id,
+                    'achievements_count': achievements_count,
+                    'total_points': total_points
+                })
+        
+        # Sort top achievers
+        top_achievers.sort(key=lambda x: (x['achievements_count'], x['total_points']), reverse=True)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'total_participants': total_riders,
+                'achievements_earned': total_achievements_earned,
+                'average_achievements_per_rider': round(total_achievements_earned / total_riders, 1),
+                'top_achievers': top_achievers[:10]
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting achievement stats: {e}")
+        return Response(
+            {'error': 'Failed to get achievement statistics'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def get_badge_level(points):
+    """Get badge level based on points"""
+    if points >= 1000:
+        return 'EXPERT'
+    elif points >= 500:
+        return 'ADVANCED'
+    elif points >= 200:
+        return 'INTERMEDIATE'
+    else:
+        return 'BEGINNER'
+
+def get_position_icon(rank):
+    """Get position icon based on rank"""
+    if rank == 1:
+        return '🥇'
+    elif rank == 2:
+        return '🥈'
+    elif rank == 3:
+        return '🥉'
+    else:
+        return '🏃'
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def digital_literacy_notifications(request):
+    """Get rider notifications"""
+    try:
+        phone_number = request.GET.get('phone_number')
+        if not phone_number:
+            return Response(
+                {'error': 'Phone number is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'🔔 Fetching notifications for rider: {phone_number}')
+        
+        rider = Rider.objects.filter(phone_number=phone_number).first()
+        if not rider:
+            return Response(
+                {'error': 'Rider not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Mock notifications for now (in production, you'd have a Notification model)
+        from datetime import datetime, timedelta
+        
+        notifications = [
+            {
+                'id': 1,
+                'type': 'session_reminder',
+                'title': 'Training Session Tomorrow',
+                'message': f'Your Digital Marketing session starts at 10:00 AM at your registered stage',
+                'timestamp': (datetime.now() - timedelta(hours=2)).isoformat(),
+                'is_read': False,
+                'icon': '📅',
+                'priority': 'high'
+            },
+            {
+                'id': 2,
+                'type': 'achievement',
+                'title': 'New Achievement Unlocked! 🏆',
+                'message': 'You\'ve earned the "Active Learner" badge for attending 5 sessions',
+                'timestamp': (datetime.now() - timedelta(hours=5)).isoformat(),
+                'is_read': False,
+                'icon': '🏆',
+                'priority': 'medium'
+            },
+            {
+                'id': 3,
+                'type': 'training_update',
+                'title': 'New Training Module Available',
+                'message': 'Advanced Digital Payment Systems module is now available',
+                'timestamp': (datetime.now() - timedelta(hours=8)).isoformat(),
+                'is_read': True,
+                'icon': '📚',
+                'priority': 'medium'
+            }
+        ]
+        
+        unread_count = len([n for n in notifications if not n['is_read']])
+        
+        return Response({
+            'success': True,
+            'data': notifications,
+            'unread_count': unread_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting notifications: {e}")
+        return Response(
+            {'error': 'Failed to get notifications'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['PATCH'])
+@permission_classes([AllowAny])
+def mark_notification_read(request, notification_id):
+    """Mark notification as read"""
+    try:
+        print(f'📖 Marking notification {notification_id} as read')
+        
+        # Mock implementation - in production you'd update a Notification model
+        return Response({
+            'success': True,
+            'message': 'Notification marked as read'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error marking notification read: {e}")
+        return Response(
+            {'error': 'Failed to mark notification as read'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['PATCH'])
+@permission_classes([AllowAny])
+def mark_all_notifications_read(request):
+    """Mark all notifications as read"""
+    try:
+        phone_number = request.data.get('phone_number')
+        if not phone_number:
+            return Response(
+                {'error': 'Phone number is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'📖 Marking all notifications as read for {phone_number}')
+        
+        # Mock implementation - in production you'd update Notification models
+        return Response({
+            'success': True,
+            'message': 'All notifications marked as read'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error marking all notifications read: {e}")
+        return Response(
+            {'error': 'Failed to mark all notifications as read'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def digital_literacy_certificates(request):
+    """Get rider certificates"""
+    try:
+        phone_number = request.GET.get('phone_number')
+        if not phone_number:
+            return Response(
+                {'error': 'Phone number is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'🏆 Fetching certificates for rider: {phone_number}')
+        
+        rider = Rider.objects.filter(phone_number=phone_number).first()
+        if not rider:
+            return Response(
+                {'error': 'Rider not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get completed modules for certificates
+        progress_records = DigitalLiteracyProgress.objects.filter(
+            rider=rider, 
+            completed_at__isnull=False
+        )
+        
+        certificates = []
+        
+        for progress in progress_records:
+            module = progress.module
+            certificates.append({
+                'id': progress.id,
+                'title': module.title,
+                'description': f'Completed {module.title} training program with {progress.completion_percentage}% completion',
+                'icon': get_module_icon(module.title),
+                'badge_color': get_badge_color(progress.points_earned),
+                'earned_date': progress.completed_at.isoformat(),
+                'points_earned': progress.points_earned,
+                'skill_level': get_badge_level(progress.points_earned),
+                'category': get_module_category(module.title),
+                'progress': progress.completion_percentage,
+                'is_earned': True,
+                'certificate_number': f'DL-2024-{str(progress.id).zfill(3)}',
+                'trainer_name': 'Digital Literacy Trainer',
+                'sessions_completed': progress.sessions_attended,
+                'total_sessions': module.session_count
+            })
+        
+        # Add in-progress modules
+        in_progress = DigitalLiteracyProgress.objects.filter(
+            rider=rider,
+            completed_at__isnull=True,
+            sessions_attended__gt=0
+        )
+        
+        for progress in in_progress:
+            module = progress.module
+            certificates.append({
+                'id': progress.id + 1000,  # Offset to avoid ID conflicts
+                'title': module.title,
+                'description': f'In progress: {module.title} training program',
+                'icon': get_module_icon(module.title),
+                'badge_color': 0xFF757575,  # Gray for in-progress
+                'earned_date': None,
+                'points_earned': progress.points_earned,
+                'skill_level': 'IN_PROGRESS',
+                'category': get_module_category(module.title),
+                'progress': progress.completion_percentage,
+                'is_earned': False,
+                'certificate_number': None,
+                'trainer_name': 'Digital Literacy Trainer',
+                'sessions_completed': progress.sessions_attended,
+                'total_sessions': module.session_count
+            })
+        
+        earned_count = len([c for c in certificates if c['is_earned']])
+        total_points = sum(c['points_earned'] for c in certificates if c['is_earned'])
+        
+        return Response({
+            'success': True,
+            'data': certificates,
+            'total_certificates': len(certificates),
+            'earned_certificates': earned_count,
+            'total_points_earned': total_points,
+            'completion_rate': round((earned_count / len(certificates) * 100), 1) if certificates else 0
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting certificates: {e}")
+        return Response(
+            {'error': 'Failed to get certificates'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def digital_literacy_badges(request):
+    """Get all available badges/certificates"""
+    try:
+        print('🏅 Fetching all available badges...')
+        
+        # Get all modules as potential badges
+        modules = DigitalLiteracyModule.objects.all()
+        
+        badges = []
+        for module in modules:
+            badges.append({
+                'id': module.id,
+                'title': module.title,
+                'description': module.description,
+                'icon': get_module_icon(module.title),
+                'category': get_module_category(module.title),
+                'points_required': 50 * module.session_count,  # Estimate points
+                'sessions_required': module.session_count,
+                'difficulty': get_badge_level(50 * module.session_count)
+            })
+        
+        return Response({
+            'success': True,
+            'data': badges
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting badges: {e}")
+        return Response(
+            {'error': 'Failed to get badges'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def verify_stage_id(request):
+    """Verify stage ID for session attendance"""
+    try:
+        stage_id = request.GET.get('stage_id')
+        schedule_id = request.GET.get('schedule_id')
+        
+        if not stage_id or not schedule_id:
+            return Response(
+                {'error': 'Stage ID and Schedule ID are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'🔍 Verifying stage ID {stage_id} for session {schedule_id}')
+        
+        # Real stage verification using Stage model
+        try:
+            stage = Stage.objects.get(stage_id=stage_id, status=Stage.ACTIVE)
+            is_valid = True
+            stage_name = stage.name
+            
+            # Optional: Verify stage location matches session location
+            try:
+                schedule = SessionSchedule.objects.get(id=schedule_id)
+                # Check if session location contains stage name (flexible matching)
+                if schedule.location_name and stage.name.lower() not in schedule.location_name.lower():
+                    print(f'⚠️  Stage {stage_id} ({stage.name}) may not match session location ({schedule.location_name})')
+                    # Still allow, but log the mismatch
+                    
+            except SessionSchedule.DoesNotExist:
+                print(f'⚠️  Session {schedule_id} not found for location verification')
+                
+        except Stage.DoesNotExist:
+            is_valid = False
+            stage_name = 'Unknown Stage'
+        
+        return Response({
+            'success': True,
+            'valid': is_valid,
+            'stage_name': stage_name,
+            'message': f'Stage verification {"successful" if is_valid else "failed"}'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error verifying stage ID: {e}")
+        return Response(
+            {'error': 'Failed to verify stage ID'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def get_module_icon(title):
+    """Get icon based on module title"""
+    title_lower = title.lower()
+    if 'marketing' in title_lower:
+        return '📱'
+    elif 'banking' in title_lower or 'payment' in title_lower:
+        return '💳'
+    elif 'smartphone' in title_lower or 'phone' in title_lower:
+        return '📱'
+    elif 'business' in title_lower:
+        return '🏢'
+    else:
+        return '📚'
+
+def get_badge_color(points):
+    """Get badge color based on points"""
+    if points >= 200:
+        return 0xFF4CAF50  # Green
+    elif points >= 100:
+        return 0xFF2196F3  # Blue
+    elif points >= 50:
+        return 0xFFFF9800  # Orange
+    else:
+        return 0xFF757575  # Gray
+
+def get_module_category(title):
+    """Get category based on module title"""
+    title_lower = title.lower()
+    if 'marketing' in title_lower:
+        return 'Marketing'
+    elif 'banking' in title_lower or 'payment' in title_lower:
+        return 'Finance'
+    elif 'smartphone' in title_lower or 'phone' in title_lower:
+        return 'Technology'
+    elif 'business' in title_lower:
+        return 'Business'
+    else:
+        return 'General'
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_for_session(request):
+    """Register rider for a training session"""
+    try:
+        phone_number = request.data.get('phone_number')
+        schedule_id = request.data.get('schedule_id')
+        
+        if not phone_number or not schedule_id:
+            return Response(
+                {'error': 'Phone number and schedule ID are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'📝 Registering rider {phone_number} for session {schedule_id}')
+        
+        # Get rider
+        rider = Rider.objects.filter(phone_number=phone_number).first()
+        if not rider:
+            return Response(
+                {'error': 'Rider not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get session schedule
+        try:
+            schedule = SessionSchedule.objects.get(id=schedule_id)
+        except SessionSchedule.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if session is still available
+        if schedule.status != 'scheduled':
+            return Response(
+                {'error': 'Session registration is not available'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check capacity
+        current_registrations = SessionAttendance.objects.filter(
+            schedule=schedule,
+            status__in=['registered', 'attended']
+        ).count()
+        
+        if current_registrations >= schedule.capacity:
+            return Response(
+                {'error': 'Session is at full capacity'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if rider is already registered
+        existing_registration = SessionAttendance.objects.filter(
+            rider=rider,
+            schedule=schedule
+        ).first()
+        
+        if existing_registration:
+            return Response(
+                {'error': 'You are already registered for this session'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create registration
+        attendance = SessionAttendance.objects.create(
+            rider=rider,
+            schedule=schedule,
+            status='registered',
+            registration_date=timezone.now()
+        )
+        
+        # Update registered count
+        schedule.registered_count = SessionAttendance.objects.filter(
+            schedule=schedule,
+            status__in=['registered', 'attended']
+        ).count()
+        schedule.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Successfully registered for training session!',
+            'data': {
+                'attendance_id': attendance.id,
+                'session_title': schedule.session.title,
+                'scheduled_date': schedule.scheduled_date.isoformat(),
+                'location': schedule.location_name,
+                'registration_status': 'registered'
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print(f"💥 Error registering for session: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': 'Failed to register for session'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_session_status(request, schedule_id):
+    """Get real-time session status and attendance information"""
+    try:
+        print(f'📊 Getting real-time status for session {schedule_id}')
+        
+        # Get session schedule
+        try:
+            schedule = SessionSchedule.objects.get(id=schedule_id)
+        except SessionSchedule.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get current attendance count
+        current_attendance = SessionAttendance.objects.filter(
+            schedule=schedule,
+            status__in=['registered', 'attended']
+        ).count()
+        
+        # Get recent attendance registrations (last 5 minutes)
+        from datetime import timedelta
+        recent_cutoff = timezone.now() - timedelta(minutes=5)
+        recent_registrations = SessionAttendance.objects.filter(
+            schedule=schedule,
+            created_at__gte=recent_cutoff,
+            status__in=['registered', 'attended']
+        ).count()
+        
+        # Check if attendance window is open
+        now = timezone.now()
+        session_start = schedule.scheduled_date
+        
+        # Attendance window: 30 minutes before to 30 minutes after session start
+        attendance_window_start = session_start - timedelta(minutes=30)
+        attendance_window_end = session_start + timedelta(minutes=30)
+        
+        is_attendance_open = attendance_window_start <= now <= attendance_window_end
+        
+        # Determine session phase
+        if now < attendance_window_start:
+            session_phase = 'upcoming'
+        elif now <= attendance_window_end:
+            session_phase = 'active'  # During attendance window
+        elif now <= session_start + timedelta(hours=2):
+            session_phase = 'in_session'  # During actual session
+        else:
+            session_phase = 'completed'
+        
+        # Get attendance list for trainers
+        attendees = []
+        if request.GET.get('include_attendees', '').lower() == 'true':
+            attendance_records = SessionAttendance.objects.filter(
+                schedule=schedule,
+                status__in=['registered', 'attended']
+            ).select_related('rider').order_by('-created_at')
+            
+            for attendance in attendance_records:
+                attendees.append({
+                    'rider_id': attendance.rider.id,
+                    'rider_name': attendance.rider.full_name,
+                    'unique_id': attendance.rider.unique_id,
+                    'phone_number': attendance.rider.phone_number,
+                    'status': attendance.status,
+                    'registration_time': attendance.created_at.isoformat(),
+                    'stage_id': getattr(attendance, 'stage_id_used', 'N/A'),
+                })
+        
+        return Response({
+            'success': True,
+            'data': {
+                'schedule_id': schedule.id,
+                'session_title': schedule.session.title,
+                'scheduled_date': schedule.scheduled_date.isoformat(),
+                'location_name': schedule.location_name,
+                'session_status': schedule.status,
+                'session_phase': session_phase,
+                'attendance_info': {
+                    'current_count': current_attendance,
+                    'capacity': schedule.capacity,
+                    'available_spots': max(0, schedule.capacity - current_attendance),
+                    'recent_registrations': recent_registrations,
+                    'is_attendance_open': is_attendance_open,
+                    'attendance_window_start': attendance_window_start.isoformat(),
+                    'attendance_window_end': attendance_window_end.isoformat(),
+                },
+                'attendees': attendees,
+                'last_updated': timezone.now().isoformat(),
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error getting session status: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': 'Failed to get session status'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_attendance_window(request):
+    """Check if attendance registration is allowed for a session"""
+    try:
+        schedule_id = request.GET.get('schedule_id')
+        if not schedule_id:
+            return Response(
+                {'error': 'Schedule ID is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f'⏰ Checking attendance window for session {schedule_id}')
+        
+        # Get session schedule
+        try:
+            schedule = SessionSchedule.objects.get(id=schedule_id)
+        except SessionSchedule.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        now = timezone.now()
+        session_start = schedule.scheduled_date
+        
+        # Attendance window: 30 minutes before to 30 minutes after session start
+        from datetime import timedelta
+        window_start = session_start - timedelta(minutes=30)
+        window_end = session_start + timedelta(minutes=30)
+        
+        is_open = window_start <= now <= window_end
+        
+        # Calculate time until window opens or closes
+        if now < window_start:
+            time_until_change = window_start - now
+            status_message = f'Attendance opens in {format_timedelta(time_until_change)}'
+            next_change = 'opens'
+        elif now <= window_end:
+            time_until_change = window_end - now
+            status_message = f'Attendance closes in {format_timedelta(time_until_change)}'
+            next_change = 'closes'
+        else:
+            time_until_change = None
+            status_message = 'Attendance window has closed'
+            next_change = 'closed'
+        
+        return Response({
+            'success': True,
+            'data': {
+                'is_open': is_open,
+                'window_start': window_start.isoformat(),
+                'window_end': window_end.isoformat(),
+                'current_time': now.isoformat(),
+                'status_message': status_message,
+                'next_change': next_change,
+                'time_until_change_seconds': int(time_until_change.total_seconds()) if time_until_change else 0,
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"💥 Error checking attendance window: {e}")
+        return Response(
+            {'error': 'Failed to check attendance window'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def format_timedelta(td):
+    """Format timedelta for human-readable display"""
+    total_seconds = int(td.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    
+    if hours > 0:
+        return f'{hours}h {minutes}m'
+    elif minutes > 0:
+        return f'{minutes} minutes'
+    else:
+        return 'less than a minute'

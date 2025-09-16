@@ -1,0 +1,244 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | {% if subtitle %}{{ subtitle }} | {% endif %}DigitalBoda Admin{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">
+        <img src="{% static 'admin/img/digitalboda-logo.png' %}" alt="DigitalBoda" style="height: 30px; margin-right: 10px;">
+        DigitalBoda Admin
+    </a>
+</h1>
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" type="text/css" href="{% static 'admin/css/custom_admin.css' %}">
+    <script src="{% static 'admin/js/custom_admin.js' %}"></script>
+    
+    <!-- Add Chart.js for dashboard charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Add custom favicon -->
+    <link rel="icon" type="image/png" href="{% static 'admin/img/favicon.png' %}">
+    
+    <!-- Meta tags for responsiveness -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DigitalBoda - Digital Literacy Training Management System">
+    
+    <!-- Progressive Web App manifest -->
+    <link rel="manifest" href="{% static 'admin/manifest.json' %}">
+    <meta name="theme-color" content="#2C3E50">
+    
+    <style>
+        /* Additional inline styles for immediate loading */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.3s;
+        }
+        
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+{% endblock %}
+
+{% block nav-global %}
+    {{ block.super }}
+    
+    <!-- Add quick stats bar -->
+    <div id="quick-stats" style="background: rgba(255,255,255,0.1); padding: 5px 20px; font-size: 12px; color: rgba(255,255,255,0.9);">
+        <span id="online-users">👥 Online: <span class="stat-value">-</span></span>
+        <span style="margin: 0 15px;">|</span>
+        <span id="pending-approvals">⏳ Pending: <span class="stat-value">-</span></span>
+        <span style="margin: 0 15px;">|</span>
+        <span id="active-sessions">📚 Active Sessions: <span class="stat-value">-</span></span>
+        <span style="margin: 0 15px;">|</span>
+        <span id="system-status">⚡ Status: <span class="stat-value text-success">Online</span></span>
+    </div>
+{% endblock %}
+
+{% block footer %}
+    <div id="footer">
+        <div style="text-align: center; padding: 20px; color: #666; border-top: 1px solid #eee;">
+            <p>
+                <strong>DigitalBoda Training Management System</strong> v1.0 
+                | Built with ❤️ for Digital Literacy 
+                | <a href="/admin/doc/" target="_blank">API Docs</a>
+                | <a href="mailto:support@digitalboda.com">Support</a>
+            </p>
+            <p style="font-size: 11px; margin-top: 10px;">
+                Last updated: <span id="last-sync">{{ "now"|date:"Y-m-d H:i:s" }}</span>
+                | Server time: <span id="server-time">{{ "now"|date:"H:i:s" }}</span>
+            </p>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading"></div>
+    </div>
+    
+    {{ block.super }}
+    
+    <!-- Floating action button for quick actions -->
+    {% if perms.riders.add_rider or perms.riders.add_trainingsession %}
+    <div class="fab-container" style="position: fixed; bottom: 30px; right: 30px; z-index: 1000;">
+        <button class="fab-main" id="fab-main" style="
+            width: 56px; height: 56px; border-radius: 50%; background: #4CA1AF; 
+            border: none; color: white; font-size: 24px; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); transition: all 0.3s;
+        ">+</button>
+        
+        <div class="fab-menu" id="fab-menu" style="
+            position: absolute; bottom: 70px; right: 0; 
+            opacity: 0; transform: scale(0); transition: all 0.3s;
+            transform-origin: bottom right;
+        ">
+            {% if perms.riders.add_rider %}
+            <a href="{% url 'admin:riders_rider_add' %}" class="fab-item" style="
+                display: block; width: 48px; height: 48px; border-radius: 50%;
+                background: #27AE60; margin-bottom: 10px; text-align: center;
+                line-height: 48px; color: white; text-decoration: none;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            " title="Add Rider">👤</a>
+            {% endif %}
+            
+            {% if perms.riders.add_trainingsession %}
+            <a href="{% url 'admin:riders_trainingsession_add' %}" class="fab-item" style="
+                display: block; width: 48px; height: 48px; border-radius: 50%;
+                background: #3498DB; margin-bottom: 10px; text-align: center;
+                line-height: 48px; color: white; text-decoration: none;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            " title="Add Training Session">📚</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+{% endblock %}
+
+{% block extrajs %}
+    {{ block.super }}
+    
+    <script>
+        // Initialize page-specific functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Hide loading overlay
+            setTimeout(function() {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.classList.add('hidden');
+                    setTimeout(function() {
+                        overlay.style.display = 'none';
+                    }, 300);
+                }
+            }, 500);
+            
+            // Update server time every second
+            function updateServerTime() {
+                const now = new Date();
+                const timeElement = document.getElementById('server-time');
+                if (timeElement) {
+                    timeElement.textContent = now.toLocaleTimeString();
+                }
+            }
+            setInterval(updateServerTime, 1000);
+            
+            // Floating Action Button functionality
+            const fabMain = document.getElementById('fab-main');
+            const fabMenu = document.getElementById('fab-menu');
+            
+            if (fabMain && fabMenu) {
+                let menuOpen = false;
+                
+                fabMain.addEventListener('click', function() {
+                    if (menuOpen) {
+                        fabMenu.style.opacity = '0';
+                        fabMenu.style.transform = 'scale(0)';
+                        fabMain.style.transform = 'rotate(0deg)';
+                        menuOpen = false;
+                    } else {
+                        fabMenu.style.opacity = '1';
+                        fabMenu.style.transform = 'scale(1)';
+                        fabMain.style.transform = 'rotate(45deg)';
+                        menuOpen = true;
+                    }
+                });
+                
+                // Close menu when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.fab-container') && menuOpen) {
+                        fabMenu.style.opacity = '0';
+                        fabMenu.style.transform = 'scale(0)';
+                        fabMain.style.transform = 'rotate(0deg)';
+                        menuOpen = false;
+                    }
+                });
+            }
+            
+            // Load quick stats
+            loadQuickStats();
+            setInterval(loadQuickStats, 30000); // Update every 30 seconds
+        });
+        
+        function loadQuickStats() {
+            // Mock data - in production, this would be AJAX calls
+            document.querySelectorAll('#quick-stats .stat-value').forEach(function(el, index) {
+                const values = ['12', '8', '5', 'Online'];
+                if (el.textContent === '-') {
+                    el.textContent = values[index] || '-';
+                }
+            });
+        }
+        
+        // Service Worker registration for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/static/admin/sw.js')
+                    .then(function(registration) {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch(function(registrationError) {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+        
+        // Add keyboard shortcuts info
+        document.addEventListener('keydown', function(e) {
+            // Show help with Ctrl+?
+            if ((e.ctrlKey || e.metaKey) && e.keyCode === 191) {
+                e.preventDefault();
+                showKeyboardShortcuts();
+            }
+        });
+        
+        function showKeyboardShortcuts() {
+            const shortcuts = [
+                'Ctrl+S - Save form',
+                'Ctrl+? - Show this help',
+                'Esc - Cancel/Close',
+                'Double-click - Quick edit (where available)'
+            ];
+            
+            alert('Keyboard Shortcuts:\n\n' + shortcuts.join('\n'));
+        }
+    </script>
+{% endblock %}

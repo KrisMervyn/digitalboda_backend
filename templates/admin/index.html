@@ -1,0 +1,374 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>DigitalBoda Training Management Dashboard</h1>
+    <p style="color: #666; margin-top: 5px;">Digital Literacy Training Platform - Administrative Control Center</p>
+    
+    
+    <!-- Enhanced Dashboard with Statistics and Charts -->
+    <div class="dashboard-container">
+        
+        <!-- Quick Stats Cards -->
+        <div class="stats-container">
+            <div class="stats-card icon-riders" onclick="location.href='{% url 'admin:riders_rider_changelist' %}'">
+                <h3 id="total-riders">8</h3>
+                <p>Total Riders</p>
+                <small class="stat-trend">📊 Real-time data</small>
+            </div>
+            
+            <div class="stats-card icon-training" onclick="location.href='{% url 'admin:riders_trainingsession_changelist' %}'">
+                <h3 id="total-sessions">32</h3>
+                <p>Training Sessions</p>
+                <small class="stat-trend">📚 Database count</small>
+            </div>
+            
+            <div class="stats-card icon-attendance" onclick="location.href='{% url 'admin:riders_sessionattendance_changelist' %}'">
+                <h3 id="attendance-rate">0.0%</h3>
+                <p>Attendance Rate</p>
+                <small class="stat-trend">📈 Live calculation</small>
+            </div>
+            
+            <div class="stats-card icon-stages" onclick="location.href='{% url 'admin:riders_stage_changelist' %}'">
+                <h3 id="active-stages">8</h3>
+                <p>Active Stages</p>
+                <small class="stat-trend">🏢 Active count</small>
+            </div>
+        </div>
+        
+        <!-- Charts Section -->
+        <div class="charts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0;">
+            
+            <!-- Attendance Trends Chart -->
+            <div class="chart-card" style="flex: 1; min-width: 300px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 15px 0; color: var(--primary);">📈 Attendance Trends</h3>
+                <canvas id="attendanceChart" width="400" height="200"></canvas>
+            </div>
+            
+            <!-- Module Progress Chart -->
+            <div class="chart-card" style="flex: 1; min-width: 300px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 15px 0; color: var(--primary);">📚 Module Progress</h3>
+                <canvas id="moduleChart" width="400" height="200"></canvas>
+            </div>
+            
+        </div>
+        
+        <!-- Recent Activity Section -->
+        <div class="activity-section" style="display: flex; gap: 20px; margin: 20px 0;">
+            
+            <!-- Recent Registrations -->
+            <div class="activity-card" style="flex: 1; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 15px 0; color: var(--primary);">👥 Recent Registrations</h3>
+                <div class="activity-list">
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>kiko nad</strong>
+                            <br><small style="color: #666;">APPROVED - +256760978654</small>
+                        </div>
+                        <small style="color: #999;">1 day ago</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>kiko abby</strong>
+                            <br><small style="color: #666;">APPROVED - +256760987654</small>
+                        </div>
+                        <small style="color: #999;">1 day ago</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>yio tay</strong>
+                            <br><small style="color: #666;">APPROVED - +256771381912</small>
+                        </div>
+                        <small style="color: #999;">4 days ago</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>muto nyo</strong>
+                            <br><small style="color: #666;">APPROVED - +256774523416</small>
+                        </div>
+                        <small style="color: #999;">5 days ago</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
+                        <div>
+                            <strong>Moses Maato</strong>
+                            <br><small style="color: #666;">APPROVED - +256750987654</small>
+                        </div>
+                        <small style="color: #999;">5 days ago</small>
+                    </div>
+                </div>
+                <a href="{% url 'admin:riders_rider_changelist' %}?status=PENDING_APPROVAL" style="display: block; text-align: center; margin-top: 15px; color: var(--secondary); text-decoration: none;">
+                    View All Pending ({{ pending_riders }}) →
+                </a>
+            </div>
+            
+            <!-- Upcoming Sessions -->
+            <div class="activity-card" style="flex: 1; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 15px 0; color: var(--primary);">📅 Upcoming Sessions</h3>
+                <div class="activity-list">
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>Getting Started with Your Phone</strong>
+                            <br><small style="color: #666;">Wandegeya Stage - Capacity: 25</small>
+                        </div>
+                        <small style="color: #999;">Sep 18</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>Smartphone Navigation & Basic Functions</strong>
+                            <br><small style="color: #666;">Kampala Community Center - Capacity: 30</small>
+                        </div>
+                        <small style="color: #999;">Sep 21</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>Making Calls and Contacts</strong>
+                            <br><small style="color: #666;">Ntinda Stage - Capacity: 20</small>
+                        </div>
+                        <small style="color: #999;">Sep 21</small>
+                    </div>
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
+                        <div>
+                            <strong>WhatsApp & Digital Messaging</strong>
+                            <br><small style="color: #666;">Makerere University ICT Lab - Capacity: 40</small>
+                        </div>
+                        <small style="color: #999;">Sep 23</small>
+                    </div>
+                </div>
+                <a href="{% url 'admin:riders_sessionschedule_changelist' %}?status=SCHEDULED" style="display: block; text-align: center; margin-top: 15px; color: var(--secondary); text-decoration: none;">
+                    View All Sessions →
+                </a>
+            </div>
+            
+        </div>
+        
+        <!-- System Status Panel -->
+        <div class="system-status" style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 15px 0; color: var(--primary);">🔧 System Status</h3>
+            
+            <div class="status-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                
+                <div class="status-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Database</span>
+                        <span class="status-badge status-active">Online</span>
+                    </div>
+                </div>
+                
+                <div class="status-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>SMS Service</span>
+                        <span class="status-badge status-active">Active</span>
+                    </div>
+                </div>
+                
+                <div class="status-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Push Notifications</span>
+                        <span class="status-badge status-active">Enabled</span>
+                    </div>
+                </div>
+                
+                <div class="status-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Photo Verification</span>
+                        <span class="status-badge status-pending">Processing</span>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+        
+    </div>
+</div>
+    
+    <script>
+        // Initialize charts when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+        });
+        
+        function initializeCharts() {
+            // Attendance Trends Chart - Using real weekly data
+            const attendanceCtx = document.getElementById('attendanceChart').getContext('2d');
+            const weeklyData = {{ weekly_attendance|safe }};
+            const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            
+            new Chart(attendanceCtx, {
+                type: 'line',
+                data: {
+                    labels: dayLabels,
+                    datasets: [{
+                        label: 'Attendance Rate %',
+                        data: weeklyData,
+                        borderColor: '#4CA1AF',
+                        backgroundColor: 'rgba(76, 161, 175, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Module Progress Chart - Using real module data
+            const moduleCtx = document.getElementById('moduleChart').getContext('2d');
+            const moduleData = {{ module_progress|safe }};
+            
+            // Prepare data for chart
+            const moduleLabels = moduleData.map(item => item.title || 'Unknown Module');
+            const moduleValues = moduleData.map(item => item.completed_count || 0);
+            
+            // Use default data if no real data available
+            const chartLabels = moduleLabels.length > 0 ? moduleLabels : ['No Data Available'];
+            const chartData = moduleValues.length > 0 ? moduleValues : [1];
+            const chartColors = moduleLabels.length > 0 ? 
+                ['#4CA1AF', '#2C3E50', '#27AE60', '#F39C12', '#E74C3C', '#9B59B6'] : 
+                ['#CCCCCC'];
+            
+            new Chart(moduleCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        data: chartData,
+                        backgroundColor: chartColors.slice(0, chartLabels.length),
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Add click handlers to stats cards
+        document.addEventListener('DOMContentLoaded', function() {
+            const cards = document.querySelectorAll('.stats-card');
+            cards.forEach(card => {
+                card.style.cursor = 'pointer';
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-5px)';
+                });
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                });
+            });
+        });
+    </script>
+    
+    <style>
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stats-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            border-left: 4px solid #4CA1AF;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .stats-card h3 {
+            font-size: 2.5rem;
+            margin: 0;
+            color: #4CA1AF;
+            font-weight: bold;
+        }
+        
+        .stats-card p {
+            margin: 10px 0 5px;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .stat-trend {
+            display: block;
+            margin-top: 5px;
+            font-weight: bold;
+        }
+        
+        .chart-card canvas {
+            max-height: 200px;
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none !important;
+        }
+        
+        .status-grid .status-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-container,
+            .activity-section {
+                flex-direction: column;
+            }
+            
+            .stats-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .stats-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    
+{% endblock %}

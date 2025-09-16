@@ -255,3 +255,119 @@ class FCMService:
         except Exception as e:
             logger.error(f"Failed to update FCM token for rider {rider.phone_number}: {str(e)}")
             return False
+    
+    @classmethod
+    def send_notification(
+        cls,
+        fcm_token: str,
+        title: str,
+        body: str,
+        data: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Send a general push notification.
+        
+        Args:
+            fcm_token: FCM token of the device
+            title: Notification title
+            body: Notification body
+            data: Additional data to send
+            
+        Returns:
+            bool: True if sent successfully
+        """
+        if not cls._initialized:
+            cls.initialize()
+            
+        if not fcm_token:
+            logger.warning("No FCM token provided")
+            return False
+        
+        # If still not initialized (development mode), simulate success
+        if not cls._initialized:
+            logger.info(f"Firebase not initialized - simulating notification: {title}")
+            return True
+            
+        try:
+            # Create the message
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
+                data={str(k): str(v) for k, v in (data or {}).items()},  # FCM requires string values
+                token=fcm_token,
+                android=messaging.AndroidConfig(
+                    notification=messaging.AndroidNotification(
+                        icon='ic_stat_notification',
+                        color='#4CA1AF',
+                        sound='default',
+                        channel_id='training_reminders'
+                    ),
+                    priority='high',
+                ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            alert=messaging.ApsAlert(
+                                title=title,
+                                body=body,
+                            ),
+                            sound='default',
+                            badge=1,
+                        ),
+                    ),
+                    headers={'apns-priority': '10'},
+                ),
+            )
+            
+            # Send the message
+            response = messaging.send(message)
+            logger.info(f"Successfully sent notification: {title} -> {response}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send notification '{title}': {str(e)}")
+            return False
+    
+    @classmethod
+    def send_training_reminder(
+        cls,
+        fcm_token: str,
+        rider_name: str,
+        session_title: str,
+        session_time: str,
+        location: str,
+        action: str = 'view_session',
+        session_id: int = None
+    ) -> bool:
+        """
+        Send a training session reminder notification.
+        
+        Args:
+            fcm_token: FCM token of the rider
+            rider_name: Name of the rider
+            session_title: Title of the training session
+            session_time: Formatted session time
+            location: Session location
+            action: Action type for the notification
+            session_id: ID of the session schedule
+            
+        Returns:
+            bool: True if sent successfully
+        """
+        title = f"Training Reminder: {session_title}"
+        body = f"Hi {rider_name}! Your {session_title} session is at {session_time} in {location}"
+        
+        data = {
+            'type': 'training_reminder',
+            'action': action,
+            'session_title': session_title,
+            'session_time': session_time,
+            'location': location
+        }
+        
+        if session_id:
+            data['session_id'] = str(session_id)
+        
+        return cls.send_notification(fcm_token, title, body, data)

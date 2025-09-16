@@ -465,3 +465,483 @@ class RiderApplication(models.Model):
             import time
             self.reference_number = f"REF{int(time.time())}"
         super().save(*args, **kwargs)
+
+
+# =============================================================================
+# DIGITAL LITERACY TRAINING MODELS
+# =============================================================================
+
+class DigitalLiteracyModule(models.Model):
+    """Digital literacy training modules"""
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    session_count = models.IntegerField(default=0)
+    total_duration_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    points_value = models.IntegerField()
+    icon = models.CharField(max_length=50, default='📱')  # Emoji icon for UI
+    order = models.PositiveIntegerField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['order']
+    
+    def __str__(self):
+        return f"{self.title} ({self.session_count} sessions)"
+
+class TrainingSession(models.Model):
+    """Individual sessions within a digital literacy module"""
+    module = models.ForeignKey(DigitalLiteracyModule, on_delete=models.CASCADE, related_name='sessions')
+    session_number = models.IntegerField()
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    duration_hours = models.DecimalField(max_digits=4, decimal_places=2)
+    learning_objectives = models.JSONField(default=list)  # List of learning objectives
+    required_materials = models.JSONField(default=list)  # List of required materials/devices
+    points_value = models.IntegerField()
+    
+    class Meta:
+        ordering = ['module', 'session_number']
+        unique_together = ['module', 'session_number']
+    
+    def __str__(self):
+        return f"{self.module.title} - Session {self.session_number}: {self.title}"
+
+class SessionSchedule(models.Model):
+    """Scheduled training sessions with specific trainers, times, and locations"""
+    session = models.ForeignKey(TrainingSession, on_delete=models.CASCADE, related_name='schedules')
+    trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='training_sessions')
+    scheduled_date = models.DateTimeField()
+    location_name = models.CharField(max_length=200)
+    location_address = models.TextField()
+    gps_latitude = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
+    gps_longitude = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
+    capacity = models.IntegerField(default=20)
+    status_choices = [
+        ('SCHEDULED', 'Scheduled'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='SCHEDULED')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-scheduled_date']
+    
+    def __str__(self):
+        return f"{self.session.title} - {self.scheduled_date.strftime('%Y-%m-%d %H:%M')} @ {self.location_name}"
+    
+    @property
+    def registered_count(self):
+        """Get number of registered attendees"""
+        return self.attendance_records.filter(status__in=['REGISTERED', 'ATTENDED']).count()
+    
+    @property
+    def spots_remaining(self):
+        """Get remaining capacity"""
+        return max(0, self.capacity - self.registered_count)
+
+class SessionAttendance(models.Model):
+    """Track attendance at physical training sessions"""
+    schedule = models.ForeignKey(SessionSchedule, on_delete=models.CASCADE, related_name='attendance_records')
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='training_attendance')
+    registration_time = models.DateTimeField(auto_now_add=True)
+    check_in_time = models.DateTimeField(null=True, blank=True)
+    check_in_gps_latitude = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
+    check_in_gps_longitude = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
+    
+    status_choices = [
+        ('REGISTERED', 'Registered'),
+        ('ATTENDED', 'Attended'),
+        ('NO_SHOW', 'No Show'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='REGISTERED')
+    trainer_notes = models.TextField(blank=True)
+    
+    class Meta:
+        unique_together = ['schedule', 'rider']
+        ordering = ['-registration_time']
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.schedule.session.title} ({self.status})"
+    
+    def calculate_distance_from_venue(self):
+        """Calculate distance between check-in location and scheduled venue"""
+        if not all([self.check_in_gps_latitude, self.check_in_gps_longitude, 
+                   self.schedule.gps_latitude, self.schedule.gps_longitude]):
+            return None
+        
+        from math import radians, cos, sin, asin, sqrt
+        
+        # Convert to radians
+        lat1 = radians(float(self.check_in_gps_latitude))
+        lon1 = radians(float(self.check_in_gps_longitude))
+        lat2 = radians(float(self.schedule.gps_latitude))
+        lon2 = radians(float(self.schedule.gps_longitude))
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+        r = 6371  # Radius of earth in kilometers
+        
+        return c * r * 1000  # Return distance in meters
+
+class AttendanceVerification(models.Model):
+    """Dual verification system for attendance"""
+    attendance = models.OneToOneField(SessionAttendance, on_delete=models.CASCADE, related_name='verification')
+    rider_verified = models.BooleanField(default=False)
+    rider_verification_time = models.DateTimeField(null=True, blank=True)
+    trainer_verified = models.BooleanField(default=False)
+    trainer_verification_time = models.DateTimeField(null=True, blank=True)
+    trainer_id_entered = models.CharField(max_length=50)  # The ID the rider entered
+    distance_from_venue_meters = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    verification_notes = models.TextField(blank=True)
+    
+    @property
+    def is_fully_verified(self):
+        return self.rider_verified and self.trainer_verified
+    
+    def __str__(self):
+        verification_status = "Verified" if self.is_fully_verified else "Pending"
+        return f"{self.attendance} - {verification_status}"
+
+class DigitalLiteracyProgress(models.Model):
+    """Track rider's progress through digital literacy modules"""
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='digital_literacy_progress')
+    module = models.ForeignKey(DigitalLiteracyModule, on_delete=models.CASCADE)
+    sessions_attended = models.IntegerField(default=0)
+    completion_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    
+    skill_level_choices = [
+        ('BEGINNER', 'Beginner'),
+        ('INTERMEDIATE', 'Intermediate'),
+        ('ADVANCED', 'Advanced'),
+        ('EXPERT', 'Expert'),
+    ]
+    skill_level = models.CharField(max_length=20, choices=skill_level_choices, default='BEGINNER')
+    
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    last_session_attended = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        unique_together = ['rider', 'module']
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.module.title} ({self.completion_percentage}%)"
+    
+    def update_progress(self):
+        """Update completion percentage based on attended sessions"""
+        total_sessions = self.module.session_count
+        if total_sessions > 0:
+            self.completion_percentage = (self.sessions_attended / total_sessions) * 100
+            if self.completion_percentage >= 100:
+                self.completed_at = timezone.now()
+        self.save()
+
+class PostSessionAssessment(models.Model):
+    """Assessment after each training session"""
+    attendance = models.OneToOneField(SessionAttendance, on_delete=models.CASCADE, related_name='assessment')
+    practical_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # 0-100
+    quiz_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # 0-100
+    overall_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # 0-100
+    
+    feedback_choices = [
+        ('EXCELLENT', 'Excellent'),
+        ('GOOD', 'Good'),
+        ('SATISFACTORY', 'Satisfactory'),
+        ('NEEDS_IMPROVEMENT', 'Needs Improvement'),
+    ]
+    trainer_feedback = models.CharField(max_length=20, choices=feedback_choices, null=True, blank=True)
+    trainer_notes = models.TextField(blank=True)
+    self_assessment_rating = models.IntegerField(null=True, blank=True)  # 1-5 scale
+    completed_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Assessment - {self.attendance}"
+    
+    def calculate_overall_score(self):
+        """Calculate overall score from practical and quiz scores"""
+        scores = [score for score in [self.practical_score, self.quiz_score] if score is not None]
+        if scores:
+            self.overall_score = sum(scores) / len(scores)
+            self.save()
+
+class DigitalSkillsPoints(models.Model):
+    """Enhanced points system for digital literacy training"""
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='digital_points')
+    attendance = models.ForeignKey(SessionAttendance, on_delete=models.CASCADE, null=True, blank=True)
+    points = models.IntegerField()
+    
+    source_choices = [
+        ('ATTENDANCE', 'Session Attendance'),
+        ('ASSESSMENT', 'Post-Session Assessment'),
+        ('PERFECT_ATTENDANCE', 'Perfect Module Attendance'),
+        ('EARLY_REGISTRATION', 'Early Registration'),
+        ('PEER_REFERRAL', 'Peer Referral'),
+        ('TRAINER_BONUS', 'Trainer Recognition Bonus'),
+        ('SKILL_MILESTONE', 'Digital Skill Milestone'),
+    ]
+    source = models.CharField(max_length=20, choices=source_choices)
+    bonus_type = models.CharField(max_length=50, blank=True)
+    description = models.TextField(blank=True)
+    earned_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-earned_at']
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.points} points ({self.source})"
+
+
+class Stage(models.Model):
+    """Boda boda stages where riders operate and training sessions are held"""
+    
+    # Status choices
+    ACTIVE = 'ACTIVE'
+    INACTIVE = 'INACTIVE'
+    MAINTENANCE = 'MAINTENANCE'
+    
+    STATUS_CHOICES = [
+        (ACTIVE, 'Active'),
+        (INACTIVE, 'Inactive'),
+        (MAINTENANCE, 'Under Maintenance'),
+    ]
+    
+    # Basic Information
+    stage_id = models.CharField(max_length=20, unique=True, help_text="Unique stage identifier (e.g., STAGE001)")
+    name = models.CharField(max_length=100, help_text="Stage name")
+    description = models.TextField(blank=True, help_text="Stage description or additional info")
+    
+    # Location Information  
+    address = models.CharField(max_length=200, help_text="Physical address of the stage")
+    district = models.CharField(max_length=50, help_text="District where stage is located")
+    division = models.CharField(max_length=50, blank=True, help_text="Division/sub-county")
+    parish = models.CharField(max_length=50, blank=True, help_text="Parish/ward")
+    
+    # GPS Coordinates (optional backup verification)
+    latitude = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
+    gps_radius = models.IntegerField(default=100, help_text="Allowed GPS radius in meters for verification")
+    
+    # Operational Information
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default=ACTIVE)
+    capacity = models.IntegerField(default=50, help_text="Maximum number of riders at this stage")
+    training_capacity = models.IntegerField(default=25, help_text="Maximum participants per training session")
+    
+    # Management
+    stage_chairman = models.CharField(max_length=100, blank=True, help_text="Stage chairman name")
+    chairman_phone = models.CharField(max_length=15, blank=True, help_text="Chairman contact")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['stage_id']
+        verbose_name = 'Boda Boda Stage'
+        verbose_name_plural = 'Boda Boda Stages'
+    
+    def __str__(self):
+        return f"{self.stage_id} - {self.name}"
+    
+    def get_active_riders_count(self):
+        """Get count of active riders at this stage"""
+        return self.riders.filter(approval_status='approved').count()
+    
+    def get_training_sessions_count(self):
+        """Get count of training sessions held at this stage"""
+        return SessionSchedule.objects.filter(
+            location_name__icontains=self.name
+        ).count()
+    
+    @classmethod
+    def verify_stage_for_location(cls, stage_id, location_name=None):
+        """Verify if a stage ID is valid for a given location"""
+        try:
+            stage = cls.objects.get(stage_id=stage_id, status=cls.ACTIVE)
+            
+            # If location name is provided, check if it matches
+            if location_name and location_name.lower() not in stage.name.lower():
+                return False, f"Stage {stage_id} is not at {location_name}"
+                
+            return True, f"Stage verified: {stage.name}"
+        except cls.DoesNotExist:
+            return False, f"Invalid stage ID: {stage_id}"
+
+
+class StageRiderAssignment(models.Model):
+    """Assignment of riders to specific stages"""
+    
+    rider = models.ForeignKey('Rider', on_delete=models.CASCADE, related_name='stage_assignments')
+    stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name='rider_assignments')
+    assigned_date = models.DateTimeField(auto_now_add=True)
+    is_primary = models.BooleanField(default=True, help_text="Is this the rider's primary stage?")
+    status = models.CharField(max_length=10, choices=[
+        ('ACTIVE', 'Active'),
+        ('INACTIVE', 'Inactive'),
+    ], default='ACTIVE')
+    
+    class Meta:
+        unique_together = ['rider', 'stage']
+        ordering = ['-is_primary', '-assigned_date']
+    
+    def __str__(self):
+        return f"{self.rider.full_name} at {self.stage.name}"
+
+
+class NotificationSchedule(models.Model):
+    """Scheduled push notifications for training reminders"""
+    
+    # Notification types
+    SESSION_REMINDER = 'session_reminder'
+    ATTENDANCE_WINDOW = 'attendance_window'
+    SESSION_STARTING = 'session_starting'
+    ACHIEVEMENT_UNLOCKED = 'achievement_unlocked'
+    NEW_MODULE_AVAILABLE = 'new_module'
+    WEEKLY_PROGRESS = 'weekly_progress'
+    
+    NOTIFICATION_TYPES = [
+        (SESSION_REMINDER, 'Session Reminder'),
+        (ATTENDANCE_WINDOW, 'Attendance Window Open'),
+        (SESSION_STARTING, 'Session Starting Soon'),
+        (ACHIEVEMENT_UNLOCKED, 'Achievement Unlocked'),
+        (NEW_MODULE_AVAILABLE, 'New Module Available'),
+        (WEEKLY_PROGRESS, 'Weekly Progress Report'),
+    ]
+    
+    # Status choices
+    PENDING = 'pending'
+    SENT = 'sent'
+    FAILED = 'failed'
+    CANCELLED = 'cancelled'
+    
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (SENT, 'Sent'),
+        (FAILED, 'Failed'),
+        (CANCELLED, 'Cancelled'),
+    ]
+    
+    # Core fields
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='scheduled_notifications')
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=100)
+    message = models.TextField()
+    
+    # Scheduling
+    scheduled_time = models.DateTimeField(help_text="When to send this notification")
+    sent_time = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=PENDING)
+    
+    # Related objects (optional)
+    session_schedule = models.ForeignKey(SessionSchedule, on_delete=models.CASCADE, null=True, blank=True)
+    module = models.ForeignKey(DigitalLiteracyModule, on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Notification data
+    data = models.JSONField(default=dict, blank=True, help_text="Additional data for the notification")
+    
+    # Retry and error handling
+    attempt_count = models.IntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['scheduled_time']
+        indexes = [
+            models.Index(fields=['scheduled_time', 'status']),
+            models.Index(fields=['rider', 'notification_type']),
+        ]
+    
+    def __str__(self):
+        return f"{self.notification_type} for {self.rider.full_name} at {self.scheduled_time}"
+    
+    def mark_as_sent(self):
+        """Mark notification as sent"""
+        self.status = self.SENT
+        self.sent_time = timezone.now()
+        self.save()
+    
+    def mark_as_failed(self, error_msg=""):
+        """Mark notification as failed"""
+        self.status = self.FAILED
+        self.error_message = error_msg
+        self.attempt_count += 1
+        self.save()
+    
+    @classmethod
+    def schedule_session_reminders(cls, session_schedule):
+        """Schedule all reminders for a training session"""
+        from datetime import timedelta
+        
+        # Get registered riders for this session
+        registered_riders = Rider.objects.filter(
+            sessionattendance__schedule=session_schedule,
+            sessionattendance__status__in=['registered', 'attended']
+        ).distinct()
+        
+        reminders = []
+        session_start = session_schedule.scheduled_date
+        
+        for rider in registered_riders:
+            # 1 day before reminder
+            day_before = session_start - timedelta(days=1)
+            if day_before > timezone.now():
+                reminders.append(cls(
+                    rider=rider,
+                    notification_type=cls.SESSION_REMINDER,
+                    title=f"Training Tomorrow: {session_schedule.session.title}",
+                    message=f"Don't forget your {session_schedule.session.title} session tomorrow at {session_start.strftime('%I:%M %p')} at {session_schedule.location_name}",
+                    scheduled_time=day_before,
+                    session_schedule=session_schedule,
+                    data={
+                        'session_id': session_schedule.id,
+                        'action': 'view_session'
+                    }
+                ))
+            
+            # 1 hour before reminder
+            hour_before = session_start - timedelta(hours=1)
+            if hour_before > timezone.now():
+                reminders.append(cls(
+                    rider=rider,
+                    notification_type=cls.SESSION_STARTING,
+                    title=f"Session Starting Soon!",
+                    message=f"Your {session_schedule.session.title} session starts in 1 hour. Make sure to arrive on time!",
+                    scheduled_time=hour_before,
+                    session_schedule=session_schedule,
+                    data={
+                        'session_id': session_schedule.id,
+                        'action': 'view_session'
+                    }
+                ))
+            
+            # Attendance window opening (30 minutes before)
+            attendance_window = session_start - timedelta(minutes=30)
+            if attendance_window > timezone.now():
+                reminders.append(cls(
+                    rider=rider,
+                    notification_type=cls.ATTENDANCE_WINDOW,
+                    title="Attendance Registration Open",
+                    message=f"You can now register your attendance for {session_schedule.session.title}. Session starts in 30 minutes!",
+                    scheduled_time=attendance_window,
+                    session_schedule=session_schedule,
+                    data={
+                        'session_id': session_schedule.id,
+                        'action': 'register_attendance'
+                    }
+                ))
+        
+        # Bulk create all reminders
+        if reminders:
+            cls.objects.bulk_create(reminders)
+        
+        return len(reminders)

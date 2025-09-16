@@ -54,4 +54,22 @@ urlpatterns = [
     path('riders/<int:rider_id>/approve-photos/', photo_views.approve_photo_verification, name='approve_photo_verification'),
     path('enumerator/pending-photo-verification/', photo_views.get_riders_pending_photo_verification, name='pending_photo_verification'),
     path('admin/photo-verification-stats/', photo_views.photo_verification_statistics, name='photo_verification_stats'),
+    
+    # Digital Literacy Training endpoints
+    path('digital-literacy/modules/', views.digital_literacy_modules, name='digital_literacy_modules'),
+    path('digital-literacy/upcoming-sessions/', views.upcoming_training_sessions, name='upcoming_training_sessions'),
+    path('digital-literacy/register-attendance/', views.register_attendance, name='register_attendance'),
+    path('digital-literacy/rider-progress/', views.rider_digital_literacy_progress, name='rider_digital_literacy_progress'),
+    path('digital-literacy/leaderboard/', views.digital_literacy_leaderboard, name='digital_literacy_leaderboard'),
+    path('digital-literacy/achievements/', views.digital_literacy_achievements, name='digital_literacy_achievements'),
+    path('digital-literacy/achievement-stats/', views.digital_literacy_achievement_stats, name='digital_literacy_achievement_stats'),
+    path('digital-literacy/notifications/', views.digital_literacy_notifications, name='digital_literacy_notifications'),
+    path('digital-literacy/notifications/<int:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
+    path('digital-literacy/notifications/read-all/', views.mark_all_notifications_read, name='mark_all_notifications_read'),
+    path('digital-literacy/certificates/', views.digital_literacy_certificates, name='digital_literacy_certificates'),
+    path('digital-literacy/badges/', views.digital_literacy_badges, name='digital_literacy_badges'),
+    path('digital-literacy/verify-stage/', views.verify_stage_id, name='verify_stage_id'),
+    path('digital-literacy/register-session/', views.register_for_session, name='register_for_session'),
+    path('digital-literacy/session-status/<int:schedule_id>/', views.get_session_status, name='get_session_status'),
+    path('digital-literacy/check-attendance-window/', views.check_attendance_window, name='check_attendance_window'),
 ]
