@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+env_path = BASE_DIR / '.env'
+load_dotenv(env_path)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-your-default-key-here')
@@ -13,7 +14,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-your-default-key-here')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.3', '192.168.1.19', '0.0.0.0']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.3', '192.168.1.19', '0.0.0.0', '167.172.58.41']
 
 # Add to INSTALLED_APPS
 INSTALLED_APPS = [
