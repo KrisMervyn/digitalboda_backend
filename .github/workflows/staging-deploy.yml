@@ -56,14 +56,20 @@ jobs:
 
     - name: 🔧 Set up test environment
       run: |
-        cp .env.example .env
-        echo "SECRET_KEY=test-secret-key-for-ci" >> .env
-        echo "DEBUG=True" >> .env
-        echo "DB_NAME=test_db" >> .env
-        echo "DB_USER=postgres" >> .env
-        echo "DB_PASSWORD=postgres" >> .env
-        echo "DB_HOST=localhost" >> .env
-        echo "DB_PORT=5432" >> .env
+        # Create .env file for testing
+        cat > .env << EOF
+        SECRET_KEY=test-secret-key-for-ci
+        DEBUG=True
+        DJANGO_ENV=testing
+        DB_NAME=test_db
+        DB_USER=postgres
+        DB_PASSWORD=postgres
+        DB_HOST=localhost
+        DB_PORT=5432
+        ALLOWED_HOSTS=localhost,127.0.0.1
+        ID_ENCRYPTION_KEY=test-encryption-key-32-bytes-long
+        ID_HASH_SALT=test-salt
+        EOF
 
     - name: 🗃️ Run migrations
       run: |
