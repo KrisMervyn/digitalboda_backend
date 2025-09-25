@@ -2,12 +2,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment-specific settings
-env_file = '.env.production' if os.getenv('DJANGO_ENV') == 'production' else '.env'
-load_dotenv(env_file)
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment-specific settings
+env_file = '.env.production' if os.getenv('DJANGO_ENV') == 'production' else '.env'
+env_path = BASE_DIR / env_file
+load_dotenv(env_path)
 
 # SECURITY: Validate secret key
 SECRET_KEY = os.getenv('SECRET_KEY')
@@ -18,7 +19,7 @@ if not SECRET_KEY or SECRET_KEY == 'django-insecure-your-default-key-here':
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 # SECURITY: Restrict allowed hosts
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,192.168.1.3,192.168.1.19,0.0.0.0,167.172.58.41').split(',')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS if host.strip()]
 
 # INSTALLED_APPS
