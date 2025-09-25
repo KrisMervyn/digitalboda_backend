@@ -20,7 +20,7 @@ from riders.models import Rider
 from riders.services.notification_service import FCMService
 
 # API Configuration
-API_BASE_URL = "http://192.168.1.19:8000/api"
+API_BASE_URL = "http://192.168.1.25:8000/api"
 MOCK_FIREBASE_TOKEN = "mock_firebase_token_for_testing_" + "x" * 100  # Mock long token
 
 def test_fcm_token_update():

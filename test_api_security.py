@@ -16,7 +16,7 @@ django.setup()
 from django.contrib.auth.models import User
 from riders.models import Rider, Enumerator
 
-BASE_URL = "http://127.0.0.1:8000/api"
+BASE_URL = "http://192.168.1.25:8000/api"
 
 def test_api_security():
     """Test API authentication and security"""

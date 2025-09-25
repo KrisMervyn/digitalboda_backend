@@ -28,7 +28,7 @@ python test_notification_flow.py
 ## 📱 Manual End-to-End Testing
 
 ### Prerequisites
-1. **Django Server Running**: `python manage.py runserver 192.168.1.19:8000`
+1. **Django Server Running**: `python manage.py runserver 192.168.1.25:8000`
 2. **Two Devices/Emulators**:
    - Device A: DigitalBoda Rider App
    - Device B: DigitalBoda Admin App
@@ -42,7 +42,7 @@ python test_notification_flow.py
 ```bash
 # Ensure Django server is running
 source venv/bin/activate
-python manage.py runserver 192.168.1.19:8000
+python manage.py runserver 192.168.1.25:8000
 
 # Check test data exists
 python manage.py shell
@@ -227,7 +227,7 @@ python manage.py shell
 
 ### Test FCM Token Update
 ```bash
-curl -X PUT http://192.168.1.19:8000/api/fcm/update-token/ \
+curl -X PUT http://192.168.1.25:8000/api/fcm/update-token/ \
   -H "Authorization: Bearer mock_firebase_token_for_testing_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
@@ -246,11 +246,11 @@ curl -X PUT http://192.168.1.19:8000/api/fcm/update-token/ \
 ### Test Rider Approval
 ```bash
 # Get rider ID first
-curl -X GET http://192.168.1.19:8000/api/enumerator/pending-riders/ \
+curl -X GET http://192.168.1.25:8000/api/enumerator/pending-riders/ \
   -H "Authorization: Bearer mock_firebase_token_for_testing_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # Approve rider (replace 7 with actual ID)
-curl -X POST http://192.168.1.19:8000/api/riders/7/approve/ \
+curl -X POST http://192.168.1.25:8000/api/riders/7/approve/ \
   -H "Authorization: Bearer mock_firebase_token_for_testing_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
@@ -264,7 +264,7 @@ curl -X POST http://192.168.1.19:8000/api/riders/7/approve/ \
 
 ### Test Rider Rejection
 ```bash
-curl -X POST http://192.168.1.19:8000/api/riders/8/reject/ \
+curl -X POST http://192.168.1.25:8000/api/riders/8/reject/ \
   -H "Authorization: Bearer mock_firebase_token_for_testing_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
@@ -303,7 +303,7 @@ python manage.py shell
 tail -f /path/to/your/django.log
 
 # Or watch console output if running in foreground
-python manage.py runserver 192.168.1.19:8000
+python manage.py runserver 192.168.1.25:8000
 ```
 
 **Look for these log patterns**:

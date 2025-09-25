@@ -492,6 +492,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             self.style.WARNING(
-                '\n💡 Access the admin at: http://192.168.1.3:8000/admin/'
+                '\n💡 Access the admin at: http://192.168.1.25:8000/admin/'
             )
         )
