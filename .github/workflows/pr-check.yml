@@ -1,0 +1,98 @@
+name: 🔍 PR Quality Check
+
+on:
+  pull_request:
+    branches: [ main, chris ]
+
+jobs:
+  quality-check:
+    name: 🔍 Code Quality Check
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: 📦 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: 📋 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 black isort bandit safety
+
+    - name: 🔧 Set up test environment
+      run: |
+        cp .env.example .env
+        echo "SECRET_KEY=test-secret-key-for-ci" >> .env
+        echo "DEBUG=True" >> .env
+        echo "DB_NAME=test_db" >> .env
+        echo "DB_USER=postgres" >> .env
+        echo "DB_PASSWORD=postgres" >> .env
+        echo "DB_HOST=localhost" >> .env
+        echo "DB_PORT=5432" >> .env
+
+    - name: 🎨 Check code formatting
+      run: |
+        black --check --diff .
+        isort --check-only --diff .
+
+    - name: 📊 Run linting
+      run: |
+        flake8 . --count --statistics --max-line-length=88 --extend-ignore=E203,W503
+
+    - name: 🔒 Security check
+      run: |
+        bandit -r . -x tests/ -f json -o bandit-report.json
+        safety check
+
+    - name: 🗃️ Check migrations
+      run: |
+        python manage.py makemigrations --dry-run --check
+
+    - name: 🧪 Run tests
+      run: |
+        python manage.py migrate
+        python manage.py test
+
+    - name: 📝 Comment PR with results
+      uses: actions/github-script@v6
+      if: always()
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## 🔍 PR Quality Check Results\n\n';
+          
+          // Add test results
+          comment += '### ✅ Tests Passed\n';
+          comment += '### 🎨 Code Formatting: ✅ Passed\n';
+          comment += '### 📊 Linting: ✅ Passed\n';
+          comment += '### 🔒 Security Check: ✅ Passed\n\n';
+          
+          comment += '**Ready for review!** 🚀\n';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

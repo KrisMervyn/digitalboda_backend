@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"  # Different port for staging
+    environment:
+      - DJANGO_ENV=staging
+    env_file:
+      - .env.staging
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    command: gunicorn --config gunicorn.conf.py digitalboda_backend.wsgi:application
+    restart: unless-stopped
+    labels:
+      - "environment=staging"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME:-digitalboda_staging}
+      POSTGRES_USER: ${DB_USER:-digitalboda_staging_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-staging_password}
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port for staging
+    restart: unless-stopped
+    labels:
+      - "environment=staging"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Different port for staging
+    volumes:
+      - redis_staging_data:/data
+    restart: unless-stopped
+    labels:
+      - "environment=staging"
+
+  celery:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_ENV=staging
+    env_file:
+      - .env.staging
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend worker --loglevel=info
+    restart: unless-stopped
+    labels:
+      - "environment=staging"
+
+  celery-beat:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_ENV=staging
+    env_file:
+      - .env.staging
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend beat --loglevel=info
+    restart: unless-stopped
+    labels:
+      - "environment=staging"
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:
+
+networks:
+  default:
+    name: digitalboda_staging_network
