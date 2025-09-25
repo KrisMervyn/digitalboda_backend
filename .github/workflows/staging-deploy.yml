@@ -56,8 +56,10 @@ jobs:
 
     - name: 🔧 Set up test environment
       run: |
+        # Generate proper Fernet key for testing
+        python -c "from cryptography.fernet import Fernet; print('ID_ENCRYPTION_KEY=' + Fernet.generate_key().decode())" > .env
         # Create .env file for testing
-        cat > .env << EOF
+        cat >> .env << EOF
         SECRET_KEY=test-secret-key-for-ci
         DEBUG=True
         DJANGO_ENV=testing
@@ -67,7 +69,6 @@ jobs:
         DB_HOST=localhost
         DB_PORT=5432
         ALLOWED_HOSTS=localhost,127.0.0.1
-        ID_ENCRYPTION_KEY=test-encryption-key-32-bytes-long
         ID_HASH_SALT=test-salt
         EOF
 
