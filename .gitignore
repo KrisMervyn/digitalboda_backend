@@ -30,13 +30,6 @@ ENV/
 .venv/
 .env/
 
-# Environment files
-.env
-.env.local
-.env.staging
-.env.production
-!.env.example
-
 # Django
 *.log
 local_settings.py
@@ -44,6 +37,13 @@ db.sqlite3
 db.sqlite3-journal
 staticfiles/
 media/
+
+# Environment files
+.env
+.env.local
+.env.staging
+.env.production
+!.env.example
 
 # Test files
 test_*.py
@@ -64,11 +64,31 @@ docs/
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Node modules (if any)
+node_modules/
+
 # Backup files
-*.backup
 *.bak
+*.backup
 *_backup.*
 full_data_backup.json
 
