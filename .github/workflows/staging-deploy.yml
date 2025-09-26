@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ chris ]
 
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/digitalboda-backend

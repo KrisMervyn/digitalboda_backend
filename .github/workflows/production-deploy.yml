@@ -11,6 +11,11 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/digitalboda-backend
