@@ -4,6 +4,7 @@ from django.utils.html import format_html
 from django.shortcuts import render
 from django.http import HttpResponse
 from .models import (
+    
     Rider, RiderApplication, Lesson, RiderProgress, Enumerator,
     DigitalLiteracyModule, TrainingSession, SessionSchedule, 
     SessionAttendance, Stage, StageRiderAssignment, NotificationSchedule
