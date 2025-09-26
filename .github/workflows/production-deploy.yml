@@ -215,7 +215,7 @@ jobs:
           curl -f http://localhost:8000/admin/ || exit 1
 
     - name: 🔔 Notify deployment status
-      if: always()
+      if: always() && secrets.SLACK_WEBHOOK_URL != ''
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ job.status }}
