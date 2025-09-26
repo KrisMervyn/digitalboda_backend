@@ -46,9 +46,6 @@ RUN chown -R django:django /app && \
 # Switch to non-root user
 USER django
 
-# Collect static files (will be overridden by volume mounts in production)
-RUN python manage.py collectstatic --noinput --clear
-
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/admin/ || exit 1
