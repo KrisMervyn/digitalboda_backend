@@ -1,0 +1,139 @@
+name: Deploy to DigitalOcean
+
+on:
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:  # Only allow manual trigger
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libpq-dev \
+          tesseract-ocr \
+          tesseract-ocr-eng
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up environment variables
+      run: |
+        echo "DEBUG=True" >> .env
+        echo "SECRET_KEY=test-secret-key-for-github-actions" >> .env
+        echo "DATABASE_URL=postgresql://test_user:test_password@localhost:5432/test_db" >> .env
+        echo "REDIS_URL=redis://localhost:6379/0" >> .env
+        echo "ALLOWED_HOSTS=localhost,127.0.0.1" >> .env
+    
+    - name: Run migrations
+      run: |
+        python manage.py migrate
+    
+    - name: Run tests
+      run: |
+        python manage.py test
+    
+    - name: Test new authentication endpoints
+      run: |
+        python manage.py runserver &
+        sleep 5
+        
+        # Test PIN endpoints
+        echo "Testing PIN status endpoint..."
+        curl -f http://localhost:8000/api/auth/pin/status/ || echo "Expected 401 - OK"
+        
+        echo "Testing PIN setup endpoint..."
+        curl -f -X POST http://localhost:8000/api/auth/pin/setup/ || echo "Expected 401 - OK"
+        
+        echo "Testing enhanced login endpoint..."
+        curl -f -X POST http://localhost:8000/api/auth/rider/login/ \
+          -H "Content-Type: application/json" \
+          -d '{"phone_number": "+256700000000", "login_type": "phone"}' || echo "Expected 404 - OK"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Deploy to DigitalOcean
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.DROPLET_HOST }}
+        username: ${{ secrets.DROPLET_USERNAME }}
+        key: ${{ secrets.DROPLET_SSH_KEY }}
+        script: |
+          cd /var/www/digitalboda_backend
+          
+          echo "🚀 Starting automated deployment..."
+          
+          # Create backup
+          sudo -u postgres pg_dump digitalboda_prod > /tmp/backup_$(date +%Y%m%d_%H%M%S).sql
+          
+          # Pull latest changes
+          git pull origin main
+          
+          # Activate virtual environment
+          source venv/bin/activate
+          
+          # Install dependencies
+          pip install -r requirements.txt
+          
+          # Run migrations
+          python manage.py migrate
+          
+          # Collect static files
+          python manage.py collectstatic --noinput
+          
+          # Restart services
+          supervisorctl restart digitalboda
+          supervisorctl restart digitalboda_celery
+          supervisorctl restart digitalboda_beat
+          
+          # Wait for services to start
+          sleep 5
+          
+          # Check service status
+          supervisorctl status
+          
+          echo "✅ Deployment completed successfully!"

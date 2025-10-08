@@ -227,7 +227,35 @@ def submit_onboarding(request):
         rider = Rider.objects.get(phone_number=phone_number)
         
         # Update rider with onboarding information
-        rider.age = request.data.get('age')
+        age_bracket = request.data.get('ageBracket')
+        age = request.data.get('age')  # Keep for backward compatibility
+        
+        # Use age bracket if provided, otherwise convert age to bracket
+        if age_bracket:
+            rider.age_bracket = age_bracket
+        elif age:
+            # Convert exact age to bracket for backward compatibility
+            age = int(age)
+            if 18 <= age <= 23:
+                rider.age_bracket = '18-23'
+            elif 24 <= age <= 29:
+                rider.age_bracket = '24-29'
+            elif 30 <= age <= 35:
+                rider.age_bracket = '30-35'
+            elif 36 <= age <= 41:
+                rider.age_bracket = '36-41'
+            elif 42 <= age <= 47:
+                rider.age_bracket = '42-47'
+            elif 48 <= age <= 53:
+                rider.age_bracket = '48-53'
+            elif 54 <= age <= 59:
+                rider.age_bracket = '54-59'
+            elif 60 <= age <= 65:
+                rider.age_bracket = '60-65'
+            else:
+                rider.age_bracket = '66+'
+        
+        rider.age = age  # Keep for migration purposes
         rider.location = request.data.get('location')
         rider.national_id_number = request.data.get('nationalIdNumber')
         

@@ -166,13 +166,45 @@ class Rider(models.Model):
     profile_photo = models.ImageField(upload_to='profiles/', blank=True, null=True)
     
     # Personal Details
-    age = models.IntegerField(blank=True, null=True)
+    # Age brackets instead of exact age
+    AGE_BRACKET_CHOICES = [
+        ('18-23', '18-23 (Young Adult)'),
+        ('24-29', '24-29 (Early Career)'),
+        ('30-35', '30-35 (Mid Career)'),
+        ('36-41', '36-41 (Experienced)'),
+        ('42-47', '42-47 (Senior)'),
+        ('48-53', '48-53 (Veteran)'),
+        ('54-59', '54-59 (Pre-retirement)'),
+        ('60-65', '60-65 (Senior Citizen)'),
+        ('66+', '66+ (Elder)'),
+    ]
+    
+    age = models.IntegerField(blank=True, null=True)  # DEPRECATED: Keep for migration
+    age_bracket = models.CharField(
+        max_length=10,
+        choices=AGE_BRACKET_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Age bracket instead of exact age for privacy"
+    )
     location = models.CharField(max_length=100, blank=True)
     experience_level = models.CharField(
         max_length=20, 
         choices=EXPERIENCE_CHOICES,
         default=NEW_RIDER
     )
+    
+    # PIN Authentication
+    pin_hash = models.CharField(
+        max_length=128, 
+        blank=True, 
+        null=True,
+        help_text="Hashed PIN for quick authentication"
+    )
+    pin_set_at = models.DateTimeField(blank=True, null=True)
+    pin_last_used = models.DateTimeField(blank=True, null=True)
+    failed_pin_attempts = models.IntegerField(default=0)
+    pin_locked_until = models.DateTimeField(blank=True, null=True)
     
     # Documents
     national_id_photo = models.ImageField(upload_to='documents/', blank=True, null=True)
@@ -394,6 +426,90 @@ class Rider(models.Model):
             return True
             
         return False
+    
+    def set_pin(self, pin_code):
+        """
+        Set PIN for quick authentication
+        
+        Args:
+            pin_code (str): 4-6 digit PIN code
+            
+        Returns:
+            bool: True if PIN was set successfully
+        """
+        import bcrypt
+        from django.utils import timezone
+        
+        # Validate PIN format (4-6 digits)
+        if not pin_code or not pin_code.isdigit() or len(pin_code) < 4 or len(pin_code) > 6:
+            raise ValueError("PIN must be 4-6 digits")
+        
+        # Hash the PIN
+        pin_bytes = pin_code.encode('utf-8')
+        salt = bcrypt.gensalt()
+        hashed_pin = bcrypt.hashpw(pin_bytes, salt)
+        
+        # Save to database
+        self.pin_hash = hashed_pin.decode('utf-8')
+        self.pin_set_at = timezone.now()
+        self.failed_pin_attempts = 0
+        self.pin_locked_until = None
+        self.save(update_fields=['pin_hash', 'pin_set_at', 'failed_pin_attempts', 'pin_locked_until'])
+        
+        return True
+    
+    def verify_pin(self, pin_code):
+        """
+        Verify PIN for authentication
+        
+        Args:
+            pin_code (str): PIN code to verify
+            
+        Returns:
+            bool: True if PIN is correct
+        """
+        import bcrypt
+        from django.utils import timezone
+        
+        # Check if PIN is set
+        if not self.pin_hash:
+            return False
+            
+        # Check if PIN is locked
+        if self.pin_locked_until and timezone.now() < self.pin_locked_until:
+            raise ValueError("PIN is temporarily locked due to too many failed attempts")
+        
+        # Verify PIN
+        pin_bytes = pin_code.encode('utf-8')
+        stored_hash = self.pin_hash.encode('utf-8')
+        
+        if bcrypt.checkpw(pin_bytes, stored_hash):
+            # PIN correct - reset failed attempts and update last used
+            self.failed_pin_attempts = 0
+            self.pin_last_used = timezone.now()
+            self.pin_locked_until = None
+            self.save(update_fields=['failed_pin_attempts', 'pin_last_used', 'pin_locked_until'])
+            return True
+        else:
+            # PIN incorrect - increment failed attempts
+            self.failed_pin_attempts += 1
+            
+            # Lock PIN after 5 failed attempts for 30 minutes
+            if self.failed_pin_attempts >= 5:
+                from datetime import timedelta
+                self.pin_locked_until = timezone.now() + timedelta(minutes=30)
+            
+            self.save(update_fields=['failed_pin_attempts', 'pin_locked_until'])
+            return False
+    
+    def has_pin_set(self):
+        """Check if rider has a PIN set"""
+        return bool(self.pin_hash)
+    
+    def is_pin_locked(self):
+        """Check if PIN is currently locked"""
+        from django.utils import timezone
+        return self.pin_locked_until and timezone.now() < self.pin_locked_until
     
     def check_duplicate_id(self, id_number):
         """

@@ -11,6 +11,11 @@ urlpatterns = [
     path('auth/logout/', authentication.logout, name='logout'),
     path('auth/verify-token/', authentication.verify_token, name='verify_token'),
     
+    # PIN Management endpoints
+    path('auth/pin/setup/', authentication.setup_pin, name='setup_pin'),
+    path('auth/pin/change/', authentication.change_pin, name='change_pin'),
+    path('auth/pin/status/', authentication.pin_status, name='pin_status'),
+    
     # Rider endpoints
     path('register/', views.register_rider, name='register_rider'),
     path('lessons/', views.get_lessons, name='get_lessons'),

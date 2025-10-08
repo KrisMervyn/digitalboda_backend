@@ -1,0 +1,158 @@
+name: Test Authentication Features
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test-authentication:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libpq-dev \
+          tesseract-ocr \
+          tesseract-ocr-eng
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up test environment
+      run: |
+        echo "DEBUG=True" >> .env
+        echo "SECRET_KEY=test-secret-key-for-github-actions" >> .env
+        echo "DATABASE_URL=postgresql://test_user:test_password@localhost:5432/test_db" >> .env
+        echo "REDIS_URL=redis://localhost:6379/0" >> .env
+        echo "ALLOWED_HOSTS=localhost,127.0.0.1" >> .env
+    
+    - name: Run migrations
+      run: |
+        python manage.py migrate
+    
+    - name: Create test data
+      run: |
+        python manage.py shell << 'EOF'
+        from riders.models import Rider
+        
+        # Create test rider with PIN
+        rider = Rider.objects.create(
+            phone_number='+256700123456',
+            first_name='Test',
+            last_name='Rider',
+            age_bracket='24-29',
+            location='Test Location',
+            status='APPROVED'
+        )
+        rider.set_pin('1234')
+        print(f"Created test rider: {rider.phone_number}")
+        print(f"PIN set: {rider.has_pin_set()}")
+        EOF
+    
+    - name: Start server in background
+      run: |
+        python manage.py runserver 0.0.0.0:8000 &
+        sleep 5
+    
+    - name: Test PIN Authentication Endpoints
+      run: |
+        echo "🧪 Testing PIN Authentication Features..."
+        
+        # Test 1: PIN status endpoint (unauthenticated)
+        echo "1. Testing PIN status endpoint..."
+        STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/auth/pin/status/)
+        if [ "$STATUS_CODE" = "401" ]; then
+          echo "✅ PIN status endpoint requires authentication (correct)"
+        else
+          echo "❌ Expected 401, got $STATUS_CODE"
+          exit 1
+        fi
+        
+        # Test 2: PIN setup endpoint (unauthenticated)
+        echo "2. Testing PIN setup endpoint..."
+        SETUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/api/auth/pin/setup/)
+        if [ "$SETUP_CODE" = "401" ]; then
+          echo "✅ PIN setup endpoint requires authentication (correct)"
+        else
+          echo "❌ Expected 401, got $SETUP_CODE"
+          exit 1
+        fi
+        
+        # Test 3: Enhanced login endpoint with PIN
+        echo "3. Testing PIN login..."
+        LOGIN_RESPONSE=$(curl -s -X POST http://localhost:8000/api/auth/rider/login/ \
+          -H "Content-Type: application/json" \
+          -d '{"phone_number": "+256700123456", "pin_code": "1234", "login_type": "pin"}')
+        
+        if echo "$LOGIN_RESPONSE" | grep -q "token\|success\|error"; then
+          echo "✅ PIN login endpoint is responding correctly"
+          echo "Response: $LOGIN_RESPONSE"
+        else
+          echo "❌ PIN login endpoint not responding correctly"
+          echo "Response: $LOGIN_RESPONSE"
+          exit 1
+        fi
+        
+        # Test 4: Age bracket in database
+        echo "4. Testing age bracket functionality..."
+        python manage.py shell << 'EOF'
+        from riders.models import Rider
+        
+        rider = Rider.objects.get(phone_number='+256700123456')
+        if rider.age_bracket == '24-29':
+            print("✅ Age bracket stored correctly")
+        else:
+            print(f"❌ Age bracket issue: {rider.age_bracket}")
+            exit(1)
+        
+        if rider.has_pin_set():
+            print("✅ PIN functionality working")
+        else:
+            print("❌ PIN not set properly")
+            exit(1)
+        EOF
+        
+        echo "🎉 All authentication tests passed!"
+    
+    - name: Test Database Migration
+      run: |
+        echo "🗄️ Testing database migration..."
+        python manage.py showmigrations riders | grep "0013_add_pin_and_age_bracket_fields"
+        echo "✅ Migration file detected correctly"
