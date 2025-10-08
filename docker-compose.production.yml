@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    command: >
+      sh -c "python manage.py collectstatic --noinput &&
+             python manage.py migrate &&
+             gunicorn --config gunicorn.conf.py digitalboda_backend.wsgi:application"
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME:-digitalboda_prod}
+      POSTGRES_USER: ${DB_USER:-digitalboda_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-production_password}
+    volumes:
+      - postgres_production_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_production_data:/data
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+  celery:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend worker --loglevel=info
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+  celery-beat:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_ENV=production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./media:/app/media
+    command: celery -A digitalboda_backend beat --loglevel=info
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./staticfiles:/var/www/static
+      - ./media:/var/www/media
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - web
+    restart: unless-stopped
+    labels:
+      - "environment=production"
+
+volumes:
+  postgres_production_data:
+  redis_production_data:
+
+networks:
+  default:
+    name: digitalboda_production_network

@@ -22,25 +22,33 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     pkg-config \
     cmake \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies first (for better layer caching)
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy project
+# Copy project files
 COPY . /app/
 
 # Create directories for static and media files
-RUN mkdir -p /app/staticfiles /app/media
+RUN mkdir -p /app/staticfiles /app/media /app/logs
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
+# Create a non-root user first
+RUN adduser --disabled-password --gecos '' django
 
-# Create a non-root user
-RUN adduser --disabled-password --gecos '' django && \
-    chown -R django:django /app
+# Set proper permissions
+RUN chown -R django:django /app && \
+    chmod -R 755 /app
+
+# Switch to non-root user
 USER django
 
-# Run gunicorn
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/admin/ || exit 1
+
+# Default command (can be overridden in docker-compose)
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "digitalboda_backend.wsgi:application"]

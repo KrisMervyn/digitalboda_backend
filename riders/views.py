@@ -5,10 +5,12 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.db import models
+from datetime import timedelta
 from rest_framework.authtoken.models import Token
 from .models import (Rider, Lesson, RiderProgress, RiderApplication, Enumerator, 
                      DigitalLiteracyModule, SessionSchedule, SessionAttendance, 
-                     DigitalLiteracyProgress, Stage, StageRiderAssignment)
+                     DigitalLiteracyProgress, Stage, StageRiderAssignment, DigitalSkillsPoints)
 from .services.notification_service import FCMService
 
 def verify_firebase_token(request):
