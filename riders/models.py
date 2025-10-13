@@ -754,8 +754,8 @@ class ModuleEnrollment(models.Model):
 
 class SessionAttendance(models.Model):
     """Simplified attendance tracking - Trainers mark attendance for their students"""
-    enrollment = models.ForeignKey(ModuleEnrollment, on_delete=models.CASCADE, related_name='attendance_records', null=True, blank=True)  # Temporarily nullable for migration
-    session = models.ForeignKey(TrainingSession, on_delete=models.CASCADE, related_name='attendance_records')
+    enrollment = models.ForeignKey(ModuleEnrollment, on_delete=models.CASCADE, related_name='attendance_records', null=True, blank=True)
+    session = models.ForeignKey(TrainingSession, on_delete=models.CASCADE, related_name='attendance_records', null=True, blank=True)
     rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='training_attendance')
     trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='marked_attendance')
     
