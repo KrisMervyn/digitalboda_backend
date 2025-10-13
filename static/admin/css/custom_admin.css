@@ -199,6 +199,29 @@
     margin: 10px;
 }
 
+/* Hide only sidebar "Add" buttons, keep in-page add functionality */
+#nav-sidebar .addlink,
+#nav-sidebar a.addlink {
+    display: none !important;
+}
+
+/* Ensure all sidebar links are visible */
+#nav-sidebar a {
+    color: var(--primary) !important;
+}
+
+#nav-sidebar a:hover {
+    color: var(--secondary) !important;
+}
+
+#nav-sidebar .section a {
+    color: var(--primary) !important;
+}
+
+#nav-sidebar .section a:hover {
+    color: var(--secondary) !important;
+}
+
 /* Search bar styling */
 #toolbar form input[type="text"] {
     border: 1px solid var(--secondary);

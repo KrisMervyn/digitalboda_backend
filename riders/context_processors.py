@@ -2,7 +2,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
-    Rider, TrainingSession, SessionAttendance, Stage, 
+    Rider, TrainingSession, SimpleAttendanceRecord, Stage, 
     DigitalLiteracyModule, SessionSchedule
 )
 
@@ -24,8 +24,8 @@ def dashboard_data(request):
         total_sessions = TrainingSession.objects.count()
         
         # Attendance rate calculation
-        total_attendance_records = SessionAttendance.objects.count()
-        attended_records = SessionAttendance.objects.filter(status='ATTENDED').count()
+        total_attendance_records = SimpleAttendanceRecord.objects.count()
+        attended_records = SimpleAttendanceRecord.objects.filter(status='ATTENDED').count()
         attendance_rate = round((attended_records / total_attendance_records * 100), 1) if total_attendance_records > 0 else 0
         
         # Active stages count
@@ -46,12 +46,12 @@ def dashboard_data(request):
         weekly_attendance = []
         for i in range(7):
             date = timezone.now().date() - timedelta(days=6-i)
-            day_attendance = SessionAttendance.objects.filter(
-                registration_time__date=date,
+            day_attendance = SimpleAttendanceRecord.objects.filter(
+                session_date=date,
                 status='ATTENDED'
             ).count()
-            total_day_sessions = SessionAttendance.objects.filter(
-                registration_time__date=date
+            total_day_sessions = SimpleAttendanceRecord.objects.filter(
+                session_date=date
             ).count()
             rate = round((day_attendance / total_day_sessions * 100), 1) if total_day_sessions > 0 else 0
             weekly_attendance.append(rate)

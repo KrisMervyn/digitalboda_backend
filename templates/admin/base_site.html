@@ -240,6 +240,12 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }
+    
+    /* Hide only sidebar "Add" buttons, keep in-page add functionality */
+    #nav-sidebar .addlink,
+    #nav-sidebar a.addlink {
+        display: none !important;
+    }
 </style>
 {% endblock %}
 

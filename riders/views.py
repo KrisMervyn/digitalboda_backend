@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from django.db import models
 from datetime import timedelta
 from rest_framework.authtoken.models import Token
-from .models import (Rider, Lesson, RiderProgress, RiderApplication, Enumerator, 
+from .models import (Rider, Lesson, RiderProgress, RiderApplication, Enumerator, BodaBodaAssociation,
                      DigitalLiteracyModule, SessionSchedule, SessionAttendance, 
                      DigitalLiteracyProgress, Stage, StageRiderAssignment, DigitalSkillsPoints)
 from .services.notification_service import FCMService
@@ -258,8 +258,21 @@ def submit_onboarding(request):
                 rider.age_bracket = '66+'
         
         rider.age = age  # Keep for migration purposes
-        rider.location = request.data.get('location')
-        rider.national_id_number = request.data.get('nationalIdNumber')
+        
+        # Handle association
+        association_name = request.data.get('association')
+        if association_name:
+            from .models import BodaBodaAssociation
+            try:
+                association = BodaBodaAssociation.objects.get(name=association_name)
+                rider.association = association
+                print(f"🏢 Association set: {association.name}")
+            except BodaBodaAssociation.DoesNotExist:
+                print(f"⚠️ Association not found: {association_name}")
+                return Response(
+                    {'error': f'Association "{association_name}" not found'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Handle photo uploads
         if 'profile_photo' in request.FILES:
@@ -271,72 +284,26 @@ def submit_onboarding(request):
             print(f"🆔 ID photo uploaded: {rider.national_id_photo.name}")
         
         # Save rider first so files are available for OCR
-        rider.save()
+        try:
+            rider.save()
+            print(f"✅ Rider saved successfully: {rider.phone_number}")
+        except Exception as e:
+            print(f"❌ Error saving rider: {e}")
+            # Check if it's a phone number uniqueness error
+            if 'phone_number' in str(e) and 'unique' in str(e).lower():
+                return Response(
+                    {'error': 'A rider with this phone number already exists'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            else:
+                return Response(
+                    {'error': f'Error saving rider data: {str(e)}'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         
-        # Validate ID number against uploaded ID photo using OCR
-        id_validation_passed = True
-        id_validation_message = ""
-        if rider.national_id_photo and rider.national_id_number:
-            try:
-                from .services.photo_verification import PhotoVerificationService
-                verification_service = PhotoVerificationService()
-                
-                # Extract text from ID photo
-                ocr_result = verification_service.extract_id_information(rider.national_id_photo.path)
-                print(f"🔍 OCR Result: {ocr_result}")
-                
-                if ocr_result.get('success'):
-                    extracted_id = ocr_result.get('parsed_info', {}).get('id_number')
-                    entered_id = rider.national_id_number.strip().upper()
-                    
-                    if extracted_id:
-                        extracted_id = extracted_id.strip().upper()
-                        
-                        # Use more flexible ID matching that accounts for OCR errors
-                        def calculate_similarity(str1, str2):
-                            """Calculate similarity percentage between two strings"""
-                            if not str1 or not str2:
-                                return 0
-                            # Calculate character match percentage
-                            matches = sum(1 for a, b in zip(str1, str2) if a == b)
-                            max_len = max(len(str1), len(str2))
-                            return (matches / max_len * 100) if max_len > 0 else 0
-                        
-                        # Check multiple validation methods
-                        exact_match = entered_id == extracted_id
-                        substring_match = entered_id in extracted_id or extracted_id in entered_id
-                        similarity_score = calculate_similarity(entered_id, extracted_id)
-                        
-                        # More lenient validation: pass if any condition is met
-                        validation_passed = (
-                            exact_match or 
-                            substring_match or 
-                            similarity_score >= 60 or  # Allow 60% similarity for OCR errors
-                            len(entered_id) >= 10  # Trust user input for valid-looking IDs
-                        )
-                        
-                        if not validation_passed:
-                            # Only fail if the IDs are completely different and low similarity
-                            id_validation_passed = False
-                            id_validation_message = f"ID number mismatch: Entered '{entered_id}' but photo shows '{extracted_id}' (Similarity: {similarity_score:.1f}%)"
-                            print(f"❌ ID validation failed: {id_validation_message}")
-                        else:
-                            validation_method = "exact match" if exact_match else "substring match" if substring_match else f"similarity match ({similarity_score:.1f}%)"
-                            print(f"✅ ID validation passed: '{entered_id}' matches photo via {validation_method}")
-                    else:
-                        print(f"⚠️ Could not extract ID from photo, allowing submission")
-                else:
-                    print(f"⚠️ OCR failed, allowing submission: {ocr_result.get('error')}")
-            except Exception as e:
-                print(f"⚠️ ID validation error, allowing submission: {e}")
-        
-        # Return error if ID validation failed
-        if not id_validation_passed:
-            return Response({
-                'success': False,
-                'error': id_validation_message,
-                'validation_error': 'id_number_mismatch'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # Photo verification is now optional since ID number input is removed
+        # ID photo is still required but no longer validated against manual input
+        print("📸 Photos uploaded successfully, no ID validation required")
         
         # Move rider to onboarding complete status
         rider.status = Rider.PENDING_APPROVAL
@@ -3186,3 +3153,34 @@ def format_timedelta(td):
         return f'{minutes} minutes'
     else:
         return 'less than a minute'
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_associations(request):
+    """Get list of all active boda boda associations"""
+    try:
+        associations = BodaBodaAssociation.objects.filter(is_active=True).order_by('name')
+        association_list = []
+        
+        for association in associations:
+            association_list.append({
+                'id': association.id,
+                'name': association.name,
+                'description': association.description,
+                'location': association.location,
+                'contact_person': association.contact_person,
+                'contact_phone': association.contact_phone,
+            })
+        
+        return Response({
+            'success': True,
+            'data': association_list,
+            'count': len(association_list)
+        })
+    except Exception as e:
+        print(f"❌ Error fetching associations: {e}")
+        return Response({
+            'success': False,
+            'error': 'Failed to fetch associations'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

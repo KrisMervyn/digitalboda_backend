@@ -7,35 +7,31 @@
 
 {% block content %}
 <div class="dashboard">
-    <h1>DigitalBoda Training Management Dashboard</h1>
-    <p style="color: #666; margin-top: 5px;">Digital Literacy Training Platform - Administrative Control Center</p>
-    
-    
     <!-- Enhanced Dashboard with Statistics and Charts -->
     <div class="dashboard-container">
         
         <!-- Quick Stats Cards -->
         <div class="stats-container">
             <div class="stats-card icon-riders" onclick="location.href='{% url 'admin:riders_rider_changelist' %}'">
-                <h3 id="total-riders">8</h3>
+                <h3 id="total-riders">{{ total_riders|default:0 }}</h3>
                 <p>Total Riders</p>
                 <small class="stat-trend">📊 Real-time data</small>
             </div>
             
             <div class="stats-card icon-training" onclick="location.href='{% url 'admin:riders_trainingsession_changelist' %}'">
-                <h3 id="total-sessions">32</h3>
+                <h3 id="total-sessions">{{ total_sessions|default:0 }}</h3>
                 <p>Training Sessions</p>
                 <small class="stat-trend">📚 Database count</small>
             </div>
             
-            <div class="stats-card icon-attendance" onclick="location.href='{% url 'admin:riders_sessionattendance_changelist' %}'">
-                <h3 id="attendance-rate">0.0%</h3>
+            <div class="stats-card icon-attendance" onclick="location.href='{% url 'admin:riders_simpleattendancerecord_changelist' %}'">
+                <h3 id="attendance-rate">{{ attendance_rate|default:0 }}%</h3>
                 <p>Attendance Rate</p>
                 <small class="stat-trend">📈 Live calculation</small>
             </div>
             
             <div class="stats-card icon-stages" onclick="location.href='{% url 'admin:riders_stage_changelist' %}'">
-                <h3 id="active-stages">8</h3>
+                <h3 id="active-stages">{{ active_stages|default:0 }}</h3>
                 <p>Active Stages</p>
                 <small class="stat-trend">🏢 Active count</small>
             </div>
@@ -65,41 +61,19 @@
             <div class="activity-card" style="flex: 1; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <h3 style="margin: 0 0 15px 0; color: var(--primary);">👥 Recent Registrations</h3>
                 <div class="activity-list">
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                    {% for activity in recent_riders %}
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; {% if not forloop.last %}border-bottom: 1px solid #eee;{% endif %}">
                         <div>
-                            <strong>kiko nad</strong>
-                            <br><small style="color: #666;">APPROVED - +256760978654</small>
+                            <strong>{{ activity.rider.first_name }} {{ activity.rider.last_name }}</strong>
+                            <br><small style="color: #666;">{{ activity.rider.status }} - {{ activity.rider.phone_number }}</small>
                         </div>
-                        <small style="color: #999;">1 day ago</small>
+                        <small style="color: #999;">{{ activity.time_ago }}</small>
                     </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong>kiko abby</strong>
-                            <br><small style="color: #666;">APPROVED - +256760987654</small>
-                        </div>
-                        <small style="color: #999;">1 day ago</small>
+                    {% empty %}
+                    <div class="activity-item" style="padding: 20px 0; text-align: center; color: #999;">
+                        No recent registrations
                     </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong>yio tay</strong>
-                            <br><small style="color: #666;">APPROVED - +256771381912</small>
-                        </div>
-                        <small style="color: #999;">4 days ago</small>
-                    </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong>muto nyo</strong>
-                            <br><small style="color: #666;">APPROVED - +256774523416</small>
-                        </div>
-                        <small style="color: #999;">5 days ago</small>
-                    </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
-                        <div>
-                            <strong>Moses Maato</strong>
-                            <br><small style="color: #666;">APPROVED - +256750987654</small>
-                        </div>
-                        <small style="color: #999;">5 days ago</small>
-                    </div>
+                    {% endfor %}
                 </div>
                 <a href="{% url 'admin:riders_rider_changelist' %}?status=PENDING_APPROVAL" style="display: block; text-align: center; margin-top: 15px; color: var(--secondary); text-decoration: none;">
                     View All Pending ({{ pending_riders }}) →
@@ -110,34 +84,19 @@
             <div class="activity-card" style="flex: 1; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <h3 style="margin: 0 0 15px 0; color: var(--primary);">📅 Upcoming Sessions</h3>
                 <div class="activity-list">
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
+                    {% for session in upcoming_sessions %}
+                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; {% if not forloop.last %}border-bottom: 1px solid #eee;{% endif %}">
                         <div>
-                            <strong>Getting Started with Your Phone</strong>
-                            <br><small style="color: #666;">Wandegeya Stage - Capacity: 25</small>
+                            <strong>{{ session.session.title|default:"Training Session" }}</strong>
+                            <br><small style="color: #666;">{{ session.location_name|default:"TBD" }} - Capacity: {{ session.capacity|default:"N/A" }}</small>
                         </div>
-                        <small style="color: #999;">Sep 18</small>
+                        <small style="color: #999;">{{ session.scheduled_date|date:"M j" }}</small>
                     </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong>Smartphone Navigation & Basic Functions</strong>
-                            <br><small style="color: #666;">Kampala Community Center - Capacity: 30</small>
-                        </div>
-                        <small style="color: #999;">Sep 21</small>
+                    {% empty %}
+                    <div class="activity-item" style="padding: 20px 0; text-align: center; color: #999;">
+                        No upcoming sessions scheduled
                     </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <div>
-                            <strong>Making Calls and Contacts</strong>
-                            <br><small style="color: #666;">Ntinda Stage - Capacity: 20</small>
-                        </div>
-                        <small style="color: #999;">Sep 21</small>
-                    </div>
-                    <div class="activity-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
-                        <div>
-                            <strong>WhatsApp & Digital Messaging</strong>
-                            <br><small style="color: #666;">Makerere University ICT Lab - Capacity: 40</small>
-                        </div>
-                        <small style="color: #999;">Sep 23</small>
-                    </div>
+                    {% endfor %}
                 </div>
                 <a href="{% url 'admin:riders_sessionschedule_changelist' %}?status=SCHEDULED" style="display: block; text-align: center; margin-top: 15px; color: var(--secondary); text-decoration: none;">
                     View All Sessions →
@@ -180,6 +139,18 @@
                     </div>
                 </div>
                 
+            </div>
+        </div>
+        
+        <!-- Reports Dashboard Card - Moved to Bottom -->
+        <div class="reports-dashboard-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 25px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.15); cursor: pointer;" onclick="location.href='/api/reports/dashboard/'">
+            <div style="display: flex; align-items: center; justify-content: space-between; color: white;">
+                <div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 1.8em; font-weight: bold;">📊 Generate Reports</h3>
+                    <p style="margin: 0; font-size: 1.1em; opacity: 0.9;">Generate comprehensive reports with CSV & Excel export</p>
+                    <small style="opacity: 0.8;">✨ Filter by date, district, gender, age group & more</small>
+                </div>
+                <div style="font-size: 3em; opacity: 0.7;">📈</div>
             </div>
         </div>
         

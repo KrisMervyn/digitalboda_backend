@@ -94,3 +94,55 @@ full_data_backup.json
 
 # Deployment
 .do/
+
+# Additional sensitive files
+*.key
+*.pem
+*.crt
+*.p12
+credentials.json
+service-account-key.json
+google-services.json
+
+# Firebase
+firebase-adminsdk-*.json
+.firebaserc
+firebase.json
+
+# Temporary files
+*.tmp
+.tmp/
+temp/
+/tmp/
+
+# Local development overrides
+local.py
+local_settings.py
+development.py
+
+# Database dumps
+*.sql
+*.dump
+dump.rdb
+
+# User uploaded content (already covered by media/ but being explicit)
+uploads/
+user_files/
+
+# Development tools
+.pytest_cache/
+.coverage
+coverage.xml
+*.cover
+.cache
+
+# OS specific
+*.pid
+*.seed
+*.pid.lock
+.npm
+
+# Editor specific
+*.sublime-project
+*.sublime-workspace
+.vscode/settings.json

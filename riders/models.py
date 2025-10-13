@@ -6,6 +6,29 @@ import hashlib
 from .encryption import EncryptedIDField, IDEncryption, log_id_access
 
 
+class BodaBodaAssociation(models.Model):
+    """Boda Boda Associations that riders can belong to"""
+    
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    location = models.CharField(max_length=100)
+    contact_person = models.CharField(max_length=100, blank=True)
+    contact_phone = models.CharField(max_length=15, blank=True)
+    is_active = models.BooleanField(default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Boda Boda Association'
+        verbose_name_plural = 'Boda Boda Associations'
+
+    def __str__(self):
+        return self.name
+
+
 class Enumerator(models.Model):
     """Field agents who conduct training and verify riders"""
     
@@ -67,6 +90,8 @@ class Enumerator(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Field Agent'
+        verbose_name_plural = 'Field Agents'
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.unique_id})"
@@ -187,7 +212,15 @@ class Rider(models.Model):
         null=True,
         help_text="Age bracket instead of exact age for privacy"
     )
-    location = models.CharField(max_length=100, blank=True)
+    location = models.CharField(max_length=100, blank=True, null=True)  # DEPRECATED: Will be removed
+    association = models.ForeignKey(
+        BodaBodaAssociation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='riders',
+        help_text="Boda Boda Association the rider belongs to"
+    )
     experience_level = models.CharField(
         max_length=20, 
         choices=EXPERIENCE_CHOICES,
@@ -264,6 +297,8 @@ class Rider(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Boda Boda Rider'
+        verbose_name_plural = 'Boda Boda Riders'
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.phone_number})"
@@ -597,10 +632,21 @@ class DigitalLiteracyModule(models.Model):
     icon = models.CharField(max_length=50, default='📱')  # Emoji icon for UI
     order = models.PositiveIntegerField()
     is_active = models.BooleanField(default=True)
+    # TODO: Uncomment when database permissions allow migration
+    # assigned_trainer = models.ForeignKey(
+    #     'Enumerator', 
+    #     on_delete=models.SET_NULL, 
+    #     null=True, 
+    #     blank=True,
+    #     related_name='assigned_modules',
+    #     help_text='Trainer responsible for this module'
+    # )
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         ordering = ['order']
+        verbose_name = 'Training Module'
+        verbose_name_plural = 'Training Modules'
     
     def __str__(self):
         return f"{self.title} ({self.session_count} sessions)"
@@ -619,6 +665,8 @@ class TrainingSession(models.Model):
     class Meta:
         ordering = ['module', 'session_number']
         unique_together = ['module', 'session_number']
+        verbose_name = 'Training Session'
+        verbose_name_plural = 'Training Sessions'
     
     def __str__(self):
         return f"{self.module.title} - Session {self.session_number}: {self.title}"
@@ -645,6 +693,8 @@ class SessionSchedule(models.Model):
     
     class Meta:
         ordering = ['-scheduled_date']
+        verbose_name = 'Session Schedule'
+        verbose_name_plural = 'Session Schedules'
     
     def __str__(self):
         return f"{self.session.title} - {self.scheduled_date.strftime('%Y-%m-%d %H:%M')} @ {self.location_name}"
@@ -659,30 +709,77 @@ class SessionSchedule(models.Model):
         """Get remaining capacity"""
         return max(0, self.capacity - self.registered_count)
 
-class SessionAttendance(models.Model):
-    """Track attendance at physical training sessions"""
-    schedule = models.ForeignKey(SessionSchedule, on_delete=models.CASCADE, related_name='attendance_records')
-    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='training_attendance')
-    registration_time = models.DateTimeField(auto_now_add=True)
-    check_in_time = models.DateTimeField(null=True, blank=True)
-    check_in_gps_latitude = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
-    check_in_gps_longitude = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
+# =============================================================================
+# 📚 SIMPLIFIED TRAINING SYSTEM - Trainer-Managed Enrollment & Attendance
+# =============================================================================
+
+class ModuleEnrollment(models.Model):
+    """Simplified enrollment system where riders enroll in modules through their assigned trainer"""
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='module_enrollments')
+    module = models.ForeignKey(DigitalLiteracyModule, on_delete=models.CASCADE, related_name='enrollments')
+    trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='student_enrollments')
+    
+    enrollment_date = models.DateTimeField(auto_now_add=True)
+    start_date = models.DateField(null=True, blank=True)
+    completion_date = models.DateField(null=True, blank=True)
     
     status_choices = [
-        ('REGISTERED', 'Registered'),
-        ('ATTENDED', 'Attended'),
-        ('NO_SHOW', 'No Show'),
-        ('CANCELLED', 'Cancelled'),
+        ('ENROLLED', 'Enrolled'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('DROPPED', 'Dropped'),
     ]
-    status = models.CharField(max_length=20, choices=status_choices, default='REGISTERED')
-    trainer_notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=status_choices, default='ENROLLED')
+    
+    # Progress tracking
+    total_sessions = models.IntegerField(default=0)  # Total sessions in the module
+    sessions_attended = models.IntegerField(default=0)  # Sessions marked as attended by trainer
+    points_earned = models.IntegerField(default=0)  # Total points from attendance
     
     class Meta:
-        unique_together = ['schedule', 'rider']
-        ordering = ['-registration_time']
+        unique_together = ['rider', 'module']  # One enrollment per rider per module
+        
+    @property
+    def completion_percentage(self):
+        if self.total_sessions == 0:
+            return 0
+        return round((self.sessions_attended / self.total_sessions) * 100)
+    
+    @property
+    def is_completed(self):
+        return self.status == 'COMPLETED' or (self.total_sessions > 0 and self.sessions_attended >= self.total_sessions)
     
     def __str__(self):
-        return f"{self.rider.full_name} - {self.schedule.session.title} ({self.status})"
+        return f"{self.rider.full_name} - {self.module.title} ({self.trainer.full_name})"
+
+class SessionAttendance(models.Model):
+    """Simplified attendance tracking - Trainers mark attendance for their students"""
+    enrollment = models.ForeignKey(ModuleEnrollment, on_delete=models.CASCADE, related_name='attendance_records', null=True, blank=True)  # Temporarily nullable for migration
+    session = models.ForeignKey(TrainingSession, on_delete=models.CASCADE, related_name='attendance_records')
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='training_attendance')
+    trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='marked_attendance')
+    
+    # Simple attendance tracking
+    session_date = models.DateField()
+    marked_at = models.DateTimeField(auto_now_add=True)  # When trainer marked attendance
+    
+    status_choices = [
+        ('PRESENT', 'Present'),
+        ('ABSENT', 'Absent'),
+        ('LATE', 'Late'),
+        ('EXCUSED', 'Excused'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='PRESENT')
+    
+    # Optional notes from trainer
+    notes = models.TextField(blank=True, help_text="Optional notes about the session or rider performance")
+    points_awarded = models.IntegerField(default=0)  # Points given for this session
+    
+    class Meta:
+        unique_together = ['enrollment', 'session', 'session_date']  # One attendance record per session per date
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.session.title} ({self.session_date}) - {self.status}"
     
     def calculate_distance_from_venue(self):
         """Calculate distance between check-in location and scheduled venue"""
@@ -707,24 +804,7 @@ class SessionAttendance(models.Model):
         
         return c * r * 1000  # Return distance in meters
 
-class AttendanceVerification(models.Model):
-    """Dual verification system for attendance"""
-    attendance = models.OneToOneField(SessionAttendance, on_delete=models.CASCADE, related_name='verification')
-    rider_verified = models.BooleanField(default=False)
-    rider_verification_time = models.DateTimeField(null=True, blank=True)
-    trainer_verified = models.BooleanField(default=False)
-    trainer_verification_time = models.DateTimeField(null=True, blank=True)
-    trainer_id_entered = models.CharField(max_length=50)  # The ID the rider entered
-    distance_from_venue_meters = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    verification_notes = models.TextField(blank=True)
-    
-    @property
-    def is_fully_verified(self):
-        return self.rider_verified and self.trainer_verified
-    
-    def __str__(self):
-        verification_status = "Verified" if self.is_fully_verified else "Pending"
-        return f"{self.attendance} - {verification_status}"
+# Note: Removed complex AttendanceVerification model - using simplified trainer-managed system
 
 class DigitalLiteracyProgress(models.Model):
     """Track rider's progress through digital literacy modules"""
@@ -891,13 +971,36 @@ class Stage(models.Model):
             return False, f"Invalid stage ID: {stage_id}"
 
 
-class StageRiderAssignment(models.Model):
-    """Assignment of riders to specific stages"""
+class StageEnumeratorAssignment(models.Model):
+    """Assignment of field agents (enumerators) to specific stages"""
     
-    rider = models.ForeignKey('Rider', on_delete=models.CASCADE, related_name='stage_assignments')
-    stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name='rider_assignments')
+    enumerator = models.ForeignKey('Enumerator', on_delete=models.CASCADE, related_name='stage_assignments')
+    stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name='enumerator_assignments')
     assigned_date = models.DateTimeField(auto_now_add=True)
-    is_primary = models.BooleanField(default=True, help_text="Is this the rider's primary stage?")
+    is_primary = models.BooleanField(default=True, help_text="Is this the enumerator's primary stage?")
+    status = models.CharField(max_length=10, choices=[
+        ('ACTIVE', 'Active'),
+        ('INACTIVE', 'Inactive'),
+    ], default='ACTIVE')
+    
+    class Meta:
+        unique_together = ['enumerator', 'stage']
+        ordering = ['-is_primary', '-assigned_date']
+        verbose_name = 'Stage Assignment'
+        verbose_name_plural = 'Stage Assignments'
+    
+    def __str__(self):
+        return f"{self.enumerator.full_name} at {self.stage.name}"
+
+
+# Keep the old model for backward compatibility during migration
+class StageRiderAssignment(models.Model):
+    """DEPRECATED: Use StageEnumeratorAssignment instead"""
+    
+    rider = models.ForeignKey('Rider', on_delete=models.CASCADE, related_name='legacy_stage_assignments')
+    stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name='legacy_rider_assignments')
+    assigned_date = models.DateTimeField(auto_now_add=True)
+    is_primary = models.BooleanField(default=True)
     status = models.CharField(max_length=10, choices=[
         ('ACTIVE', 'Active'),
         ('INACTIVE', 'Inactive'),
@@ -906,9 +1009,11 @@ class StageRiderAssignment(models.Model):
     class Meta:
         unique_together = ['rider', 'stage']
         ordering = ['-is_primary', '-assigned_date']
+        verbose_name = 'Legacy Stage Assignment'
+        verbose_name_plural = 'Legacy Stage Assignments'
     
     def __str__(self):
-        return f"{self.rider.full_name} at {self.stage.name}"
+        return f"{self.rider.full_name} at {self.stage.name} (Legacy)"
 
 
 class NotificationSchedule(models.Model):
@@ -972,6 +1077,8 @@ class NotificationSchedule(models.Model):
     
     class Meta:
         ordering = ['scheduled_time']
+        verbose_name = 'Notification'
+        verbose_name_plural = 'Notifications'
         indexes = [
             models.Index(fields=['scheduled_time', 'status']),
             models.Index(fields=['rider', 'notification_type']),
@@ -1061,3 +1168,51 @@ class NotificationSchedule(models.Model):
             cls.objects.bulk_create(reminders)
         
         return len(reminders)
+
+
+class TrainingInterest(models.Model):
+    """Track rider interest in training modules for simplified system"""
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='training_interests')
+    module = models.ForeignKey(DigitalLiteracyModule, on_delete=models.CASCADE, related_name='interested_riders')
+    trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='student_interests')
+    expressed_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        unique_together = ['rider', 'module']
+        ordering = ['-expressed_at']
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.module.title}"
+
+class SimpleAttendanceRecord(models.Model):
+    """Simple attendance tracking for training sessions"""
+    ATTENDED = 'ATTENDED'
+    ABSENT = 'ABSENT'
+    LATE = 'LATE'
+    EXCUSED = 'EXCUSED'
+    
+    STATUS_CHOICES = [
+        (ATTENDED, 'Attended'),
+        (ABSENT, 'Absent'),
+        (LATE, 'Late'),
+        (EXCUSED, 'Excused'),
+    ]
+    
+    rider = models.ForeignKey(Rider, on_delete=models.CASCADE, related_name='simple_attendance_records')
+    session = models.ForeignKey(TrainingSession, on_delete=models.CASCADE, related_name='simple_attendance_records')
+    trainer = models.ForeignKey(Enumerator, on_delete=models.CASCADE, related_name='recorded_attendance')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ATTENDED)
+    session_date = models.DateField()
+    points_awarded = models.IntegerField(default=0)
+    notes = models.TextField(blank=True, null=True)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-recorded_at']
+        constraints = [
+            models.UniqueConstraint(fields=['rider', 'session', 'session_date'], name='unique_rider_session_date')
+        ]
+    
+    def __str__(self):
+        return f"{self.rider.full_name} - {self.session.title} - {self.status} ({self.session_date})"
