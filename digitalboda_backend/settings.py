@@ -22,6 +22,11 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,192.168.1.3,192.168.1.19,0.0.0.0,167.172.58.41').split(',')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS if host.strip()]
 
+# Google OAuth Configuration
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
+if not GOOGLE_OAUTH_CLIENT_ID:
+    print("⚠️ WARNING: GOOGLE_OAUTH_CLIENT_ID not set. Google Sign-In will not work.")
+
 # INSTALLED_APPS
 INSTALLED_APPS = [
     'django.contrib.admin',

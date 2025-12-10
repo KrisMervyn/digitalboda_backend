@@ -164,10 +164,22 @@ class Rider(models.Model):
     ]
 
     # Basic Info
-    phone_number = models.CharField(max_length=15, unique=True)
+    phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     first_name = models.CharField(max_length=50, default='')
     last_name = models.CharField(max_length=50, default='')
     fcm_token = models.TextField(blank=True, null=True)  # For push notifications
+
+    # Google Authentication Fields
+    email = models.EmailField(unique=True, null=True, blank=True)
+    google_user_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    profile_photo_url = models.URLField(max_length=500, null=True, blank=True)
+    is_email_verified = models.BooleanField(default=False)
+    auth_provider = models.CharField(
+        max_length=20,
+        choices=[('phone', 'Phone'), ('google', 'Google')],
+        default='phone',
+        help_text='Authentication method used for registration'
+    )
     
     # Enumerator Assignment
     assigned_enumerator = models.ForeignKey(

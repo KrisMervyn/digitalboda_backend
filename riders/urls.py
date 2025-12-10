@@ -4,6 +4,7 @@ from . import authentication
 from . import photo_views
 from . import report_views
 from . import simple_training_views
+from . import google_auth_views
 
 urlpatterns = [
     # Authentication endpoints
@@ -12,12 +13,16 @@ urlpatterns = [
     path('auth/admin/login/', authentication.admin_login, name='admin_login'),
     path('auth/logout/', authentication.logout, name='logout'),
     path('auth/verify-token/', authentication.verify_token, name='verify_token'),
-    
+
+    # Google Authentication endpoints
+    path('auth/login/google/', google_auth_views.google_login, name='google_login'),
+    path('register/google/', google_auth_views.google_register, name='google_register'),
+
     # PIN Management endpoints
     path('auth/pin/setup/', authentication.setup_pin, name='setup_pin'),
     path('auth/pin/change/', authentication.change_pin, name='change_pin'),
     path('auth/pin/status/', authentication.pin_status, name='pin_status'),
-    
+
     # Rider endpoints
     path('register/', views.register_rider, name='register_rider'),
     path('lessons/', views.get_lessons, name='get_lessons'),

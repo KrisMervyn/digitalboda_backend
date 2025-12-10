@@ -38,5 +38,9 @@ redis>=5.0.0
 # Firebase (already in use)
 firebase-admin>=6.0.0
 
+# Google OAuth Authentication
+google-auth>=2.25.2
+google-auth-oauthlib>=1.2.0
+
 # HTTP requests
 requests>=2.31.0
