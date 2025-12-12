@@ -5,8 +5,15 @@ from . import photo_views
 from . import report_views
 from . import simple_training_views
 from . import google_auth_views
+from . import account_deletion_views
 
 urlpatterns = [
+    # Account Deletion endpoints (for Google Play Store compliance)
+    path('account/delete/', account_deletion_views.account_deletion_page, name='account_deletion_page'),
+    path('account/delete-request/', account_deletion_views.request_account_deletion, name='request_account_deletion'),
+    path('account/admin/execute-deletion/<int:rider_id>/', account_deletion_views.execute_account_deletion, name='execute_account_deletion'),
+    path('account/admin/deletion-stats/', account_deletion_views.account_deletion_stats, name='account_deletion_stats'),
+
     # Authentication endpoints
     path('auth/rider/login/', authentication.rider_login, name='rider_login'),
     path('auth/enumerator/login/', authentication.enumerator_login, name='enumerator_login'),
@@ -29,7 +36,7 @@ urlpatterns = [
     path('profile/<str:phone_number>/', views.rider_profile, name='rider_profile'),
     path('onboarding/submit/', views.submit_onboarding, name='submit_onboarding'),
     path('associations/', views.get_associations, name='get_associations'),
-    
+
     # Admin endpoints
     path('admin/login/', views.admin_login, name='admin_login'),
     path('admin/pending-riders/', views.admin_pending_riders, name='admin_pending_riders'),
@@ -38,7 +45,7 @@ urlpatterns = [
     path('admin/rider/<int:rider_id>/approve/', views.admin_approve_rider, name='admin_approve_rider'),
     path('admin/rider/<int:rider_id>/reject/', views.admin_reject_rider, name='admin_reject_rider'),
     path('admin/dashboard/stats/', views.admin_dashboard_stats, name='admin_dashboard_stats'),
-    
+
     # Admin Enumerator Management endpoints
     path('admin/enumerators/', views.admin_enumerators_list, name='admin_enumerators_list'),
     path('admin/enumerator/create/', views.admin_create_enumerator, name='admin_create_enumerator'),
@@ -46,7 +53,7 @@ urlpatterns = [
     path('admin/enumerator/<str:enumerator_id>/', views.admin_enumerator_details, name='admin_enumerator_details'),
     path('admin/enumerator/<str:enumerator_id>/update/', views.admin_update_enumerator, name='admin_update_enumerator'),
     path('admin/enumerator/<str:enumerator_id>/delete/', views.admin_delete_enumerator, name='admin_delete_enumerator'),
-    
+
     # Enumerator endpoints
     path('enumerator/login/', views.enumerator_login, name='enumerator_login'),
     path('enumerator/assigned-riders/', views.enumerator_assigned_riders, name='enumerator_assigned_riders'),
@@ -55,19 +62,19 @@ urlpatterns = [
     path('enumerator/rider/<int:rider_id>/reject/', views.enumerator_reject_rider, name='enumerator_reject_rider'),
     path('enumerator/dashboard/stats/', views.enumerator_dashboard_stats, name='enumerator_dashboard_stats'),
     path('enumerator/change-password/', views.enumerator_change_password, name='enumerator_change_password'),
-    
+
     # FCM/Push Notification endpoints
     path('fcm/update-token/', views.update_fcm_token, name='update_fcm_token'),
     path('riders/<int:rider_id>/approve/', views.approve_rider, name='approve_rider'),
     path('riders/<int:rider_id>/reject/', views.reject_rider, name='reject_rider'),
-    
+
     # Photo Verification endpoints
     path('riders/<int:rider_id>/verify-photos/', photo_views.verify_rider_photos, name='verify_rider_photos'),
     path('riders/<int:rider_id>/photo-verification-report/', photo_views.get_photo_verification_report, name='photo_verification_report'),
     path('riders/<int:rider_id>/approve-photos/', photo_views.approve_photo_verification, name='approve_photo_verification'),
     path('enumerator/pending-photo-verification/', photo_views.get_riders_pending_photo_verification, name='pending_photo_verification'),
     path('admin/photo-verification-stats/', photo_views.photo_verification_statistics, name='photo_verification_stats'),
-    
+
     # Digital Literacy Training endpoints (Original Complex System)
     path('digital-literacy/modules/', views.digital_literacy_modules, name='digital_literacy_modules'),
     path('digital-literacy/upcoming-sessions/', views.upcoming_training_sessions, name='upcoming_training_sessions'),
@@ -85,7 +92,7 @@ urlpatterns = [
     path('digital-literacy/register-session/', views.register_for_session, name='register_for_session'),
     path('digital-literacy/session-status/<int:schedule_id>/', views.get_session_status, name='get_session_status'),
     path('digital-literacy/check-attendance-window/', views.check_attendance_window, name='check_attendance_window'),
-    
+
     # Simplified Training System endpoints (New Trainer-Managed System)
     path('training/modules/', simple_training_views.get_available_modules, name='simple_get_modules'),
     path('training/enroll/', simple_training_views.simple_enroll_in_module, name='simple_enroll'),
@@ -95,20 +102,20 @@ urlpatterns = [
     path('training/trainer/daily-stats/', simple_training_views.get_daily_attendance_stats, name='daily_attendance_stats'),
     path('training/trainer/session-details/', simple_training_views.get_session_attendance_details, name='session_attendance_details'),
     path('training/trainer/attendance-history/', simple_training_views.get_attendance_history, name='attendance_history'),
-    
+
     # Reporting Dashboard and API endpoints
     path('reports/dashboard/', report_views.reports_dashboard, name='reports_dashboard'),
     path('reports/filters/', report_views.get_available_filters, name='report_filters'),
     path('reports/preview/', report_views.preview_report_data, name='report_preview'),
     path('reports/statistics/', report_views.get_report_statistics, name='report_statistics'),
     path('reports/schedule/', report_views.schedule_automated_report, name='schedule_automated_report'),
-    
+
     # CSV Export endpoints
     path('reports/export/attendance/csv/', report_views.export_attendance_csv, name='export_attendance_csv'),
     path('reports/export/rider-summary/csv/', report_views.export_rider_summary_csv, name='export_rider_summary_csv'),
     path('reports/export/module-completion/csv/', report_views.export_module_completion_csv, name='export_module_completion_csv'),
     path('reports/export/geographical/csv/', report_views.export_geographical_csv, name='export_geographical_csv'),
-    
+
     # Excel Export endpoints
     path('reports/export/attendance/excel/', report_views.export_attendance_excel, name='export_attendance_excel'),
     path('reports/export/rider-summary/excel/', report_views.export_rider_summary_excel, name='export_rider_summary_excel'),

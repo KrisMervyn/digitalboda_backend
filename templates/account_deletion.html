@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Account - DigitalBoda</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h2 {
+            color: #667eea;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+
+        .section h3 {
+            color: #555;
+            font-size: 18px;
+            margin-bottom: 10px;
+            margin-top: 20px;
+        }
+
+        .section p {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .steps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .step {
+            display: flex;
+            align-items: start;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .step:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .data-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .deletion-form {
+            background: #fff9e6;
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .warning-box strong {
+            color: #856404;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .warning-box p {
+            color: #856404;
+            margin: 0;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .success-message,
+        .error-message {
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .contact-info {
+            background: #e8f4f8;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .contact-info a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .contact-info a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 20px auto;
+            }
+
+            .header,
+            .content {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .deletion-form {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DigitalBoda Account Deletion</h1>
+            <p>Request to delete your account and associated data</p>
+        </div>
+
+        <div class="content">
+            <div class="section">
+                <h2>About DigitalBoda</h2>
+                <p>DigitalBoda is a comprehensive platform for motorcycle (boda boda) riders, providing digital literacy training, onboarding services, and professional development opportunities.</p>
+            </div>
+
+            <div class="section">
+                <h2>How to Request Account Deletion</h2>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <strong>Fill out the form below</strong>
+                            <p>Provide your phone number (the one you used to register) and optionally tell us why you want to delete your account.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <strong>Submit your request</strong>
+                            <p>Click the "Request Account Deletion" button to submit your request to our system.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <strong>Confirmation</strong>
+                            <p>You will receive a confirmation message once your request is received.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <strong>Processing</strong>
+                            <p>Your account and associated data will be deleted within 30 days of your request.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Data Deletion Policy</h2>
+
+                <h3>Data That Will Be Deleted:</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Personal Information</td>
+                            <td>Name, phone number, email address</td>
+                        </tr>
+                        <tr>
+                            <td>Profile Data</td>
+                            <td>Profile photos, personal details, preferences</td>
+                        </tr>
+                        <tr>
+                            <td>Training Progress</td>
+                            <td>Digital literacy course progress and completion records</td>
+                        </tr>
+                        <tr>
+                            <td>Application Data</td>
+                            <td>Onboarding application and verification documents</td>
+                        </tr>
+                        <tr>
+                            <td>Authentication Data</td>
+                            <td>Login credentials and access tokens</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Data That May Be Retained:</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data Type</th>
+                            <th>Retention Period</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Transaction Records</td>
+                            <td>7 years</td>
+                            <td>Legal and regulatory compliance</td>
+                        </tr>
+                        <tr>
+                            <td>Anonymized Analytics</td>
+                            <td>Indefinite</td>
+                            <td>Service improvement (no personal identifiers)</td>
+                        </tr>
+                        <tr>
+                            <td>Audit Logs</td>
+                            <td>90 days</td>
+                            <td>Security and fraud prevention</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="warning-box">
+                <strong>Important Notice</strong>
+                <p>Account deletion is permanent and cannot be undone. All your training progress, certificates, and achievements will be lost. Please ensure you have downloaded any important data before proceeding.</p>
+            </div>
+
+            <div class="deletion-form">
+                <h2 style="margin-bottom: 20px; color: #555;">Request Account Deletion</h2>
+
+                <div id="successMessage" class="success-message">
+                    Your account deletion request has been submitted successfully. We will process your request within 30 days.
+                </div>
+
+                <div id="errorMessage" class="error-message">
+                    An error occurred while processing your request. Please try again or contact support.
+                </div>
+
+                <form id="deletionForm">
+                    <div class="form-group">
+                        <label for="phoneNumber">Phone Number *</label>
+                        <input
+                            type="tel"
+                            id="phoneNumber"
+                            name="phone_number"
+                            placeholder="+256XXXXXXXXX"
+                            required
+                            pattern="^\+?[0-9]{10,15}$"
+                        >
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Enter the phone number you used to register with DigitalBoda
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reason">Reason for Deletion (Optional)</label>
+                        <textarea
+                            id="reason"
+                            name="reason"
+                            placeholder="Help us improve by telling us why you're leaving..."
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input
+                                type="checkbox"
+                                id="confirmDeletion"
+                                required
+                                style="width: auto; margin-right: 10px;"
+                            >
+                            <span>I understand that this action is permanent and cannot be undone</span>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="submit-btn">Request Account Deletion</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h2>Need Help?</h2>
+                <div class="contact-info">
+                    <p>If you have questions about account deletion or need assistance, please contact us:</p>
+                    <ul style="margin-top: 10px; margin-left: 20px;">
+                        <li>Email: <a href="mailto:support@digitalboda.ug">support@digitalboda.ug</a></li>
+                        <li>Phone: <a href="tel:+256700000000">+256 700 000 000</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('deletionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const submitBtn = this.querySelector('.submit-btn');
+            const successMsg = document.getElementById('successMessage');
+            const errorMsg = document.getElementById('errorMessage');
+
+            // Hide previous messages
+            successMsg.style.display = 'none';
+            errorMsg.style.display = 'none';
+
+            // Disable submit button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            try {
+                const formData = new FormData(this);
+                const data = {
+                    phone_number: formData.get('phone_number'),
+                    reason: formData.get('reason') || ''
+                };
+
+                const response = await fetch('/api/account/delete-request/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    successMsg.style.display = 'block';
+                    this.reset();
+                    // Scroll to success message
+                    successMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    errorMsg.textContent = result.error || 'An error occurred while processing your request. Please try again.';
+                    errorMsg.style.display = 'block';
+                    errorMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (error) {
+                errorMsg.textContent = 'Network error. Please check your connection and try again.';
+                errorMsg.style.display = 'block';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Request Account Deletion';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -3,7 +3,8 @@ Google Sign-In Authentication Views for DigitalBoda Backend
 Handles Google OAuth authentication for rider registration and login
 """
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -48,6 +49,7 @@ def verify_google_token(firebase_token):
         }
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def google_login(request):
     """
     Login existing rider with Google Sign-In
@@ -140,6 +142,7 @@ def google_login(request):
         }, status=500)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def google_register(request):
     """
     Register new rider with Google Sign-In
